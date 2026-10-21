@@ -1,0 +1,6 @@
+{
+  "name": "StreamDeck TV",
+  "description": "Native Android IPTV player for Android TV and Google TV with D-pad remote navigation, M3U playlists, ExoPlayer, and local storage.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
