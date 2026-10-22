@@ -1,5 +1,8 @@
 package com.example.domain.model
 
+import androidx.compose.runtime.Immutable
+
+@Immutable
 data class AudioTrackInfo(
     val id: String,
     val index: Int,
@@ -8,6 +11,7 @@ data class AudioTrackInfo(
     val isSelected: Boolean
 )
 
+@Immutable
 data class SubtitleTrackInfo(
     val id: String,
     val index: Int,

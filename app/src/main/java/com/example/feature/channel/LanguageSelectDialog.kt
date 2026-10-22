@@ -27,13 +27,17 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -62,6 +66,15 @@ fun LanguageSelectDialog(
     onSelectLanguage: (String?) -> Unit, // null means reset to auto-detected
     onDismiss: () -> Unit
 ) {
+    val cancelFocusRequester = remember { FocusRequester() }
+
+    LaunchedEffect(Unit) {
+        kotlinx.coroutines.delay(100)
+        try {
+            cancelFocusRequester.requestFocus()
+        } catch (_: Exception) {}
+    }
+
     Dialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false)
@@ -146,6 +159,7 @@ fun LanguageSelectDialog(
                         text = "Cancel",
                         icon = Icons.Default.Close,
                         onClick = onDismiss,
+                        modifier = Modifier.focusRequester(cancelFocusRequester),
                         tag = "btn_cancel_language"
                     )
                 }
@@ -184,12 +198,23 @@ private fun LanguageOptionChip(
                 color = if (isFocused) TvFocusBorder else if (isSelected) TvPrimary else TvSurfaceVariant,
                 shape = RoundedCornerShape(8.dp)
             )
+            .onPreviewKeyEvent { keyEvent ->
+                if (keyEvent.nativeKeyEvent.action == android.view.KeyEvent.ACTION_UP &&
+                    (keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_DPAD_CENTER ||
+                     keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_ENTER ||
+                     keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_NUMPAD_ENTER)
+                ) {
+                    onClick()
+                    true
+                } else {
+                    false
+                }
+            }
             .clickable(
                 interactionSource = interactionSource,
                 indication = androidx.compose.material3.ripple(),
                 onClick = onClick
             )
-            .focusable(interactionSource = interactionSource)
             .padding(horizontal = 14.dp, vertical = 9.dp)
             .testTag("lang_chip_$language"),
         contentAlignment = Alignment.Center

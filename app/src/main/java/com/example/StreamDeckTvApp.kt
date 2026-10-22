@@ -3,52 +3,45 @@ package com.example
 import android.app.Application
 import com.example.data.local.AppPreferences
 import com.example.data.local.StreamDeckDatabase
-import com.example.data.repository.ChannelRepository
-import com.example.data.repository.PlaylistRepository
+import com.example.di.AppContainer
+import com.example.di.DefaultAppContainer
+import com.example.domain.repository.IChannelRepository
+import com.example.domain.repository.IPlaylistRepository
 import com.example.player.StreamPlayerManager
+import com.example.util.NetworkMonitor
 
 class StreamDeckTvApp : Application() {
 
-    lateinit var database: StreamDeckDatabase
+    lateinit var appContainer: AppContainer
         private set
 
-    lateinit var preferences: AppPreferences
-        private set
+    val database: StreamDeckDatabase
+        get() = appContainer.database
 
-    lateinit var playlistRepository: PlaylistRepository
-        private set
+    val preferences: AppPreferences
+        get() = appContainer.preferences
 
-    lateinit var channelRepository: ChannelRepository
-        private set
+    val playlistRepository: IPlaylistRepository
+        get() = appContainer.playlistRepository
 
-    lateinit var playerManager: StreamPlayerManager
-        private set
+    val channelRepository: IChannelRepository
+        get() = appContainer.channelRepository
 
-    lateinit var networkMonitor: com.example.util.NetworkMonitor
-        private set
+    val playerManager: StreamPlayerManager
+        get() = appContainer.playerManager
+
+    val networkMonitor: NetworkMonitor
+        get() = appContainer.networkMonitor
 
     override fun onCreate() {
         super.onCreate()
         instance = this
-
-        database = StreamDeckDatabase.getInstance(this)
-        preferences = AppPreferences(this)
-        networkMonitor = com.example.util.NetworkMonitor(this)
-        playlistRepository = PlaylistRepository(
-            context = this,
-            playlistDao = database.playlistDao(),
-            channelDao = database.channelDao()
-        )
-        channelRepository = ChannelRepository(
-            channelDao = database.channelDao(),
-            playbackHistoryDao = database.playbackHistoryDao()
-        )
-        playerManager = StreamPlayerManager(this)
+        appContainer = DefaultAppContainer(this)
     }
 
     override fun onTerminate() {
         super.onTerminate()
-        playerManager.release()
+        appContainer.playerManager.release()
     }
 
     companion object {

@@ -347,6 +347,7 @@ class StreamPlayerManager(private val context: Context) {
     fun stop() {
         stopProgressTracker()
         exoPlayer?.stop()
+        exoPlayer?.clearMediaItems()
         _uiState.value = PlayerUiState(
             currentChannel = null,
             isPlaying = false,

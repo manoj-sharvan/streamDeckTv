@@ -7,13 +7,13 @@ import androidx.compose.ui.graphics.Color
 
 private val TvDarkColorScheme = darkColorScheme(
     primary = TvPrimary,
-    onPrimary = Color(0xFF001E2F),
+    onPrimary = Color.White,
     primaryContainer = TvPrimaryVariant,
-    onPrimaryContainer = Color(0xFFC7E7FF),
+    onPrimaryContainer = Color(0xFFD0E6FF),
     secondary = TvSecondary,
-    onSecondary = Color(0xFF002B73),
-    secondaryContainer = Color(0xFF003F9E),
-    onSecondaryContainer = Color(0xFFD8E2FF),
+    onSecondary = Color.White,
+    secondaryContainer = Color(0xFF2C264D),
+    onSecondaryContainer = Color(0xFFE5DEFF),
     tertiary = TvAccent,
     background = TvBackground,
     onBackground = TvTextPrimary,

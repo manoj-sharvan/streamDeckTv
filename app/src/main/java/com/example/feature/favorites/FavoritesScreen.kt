@@ -12,8 +12,14 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.itemsIndexed
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.Icon
@@ -27,6 +33,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.domain.model.Channel
 import com.example.ui.components.TvChannelCard
+import com.example.ui.components.tvVerticalScrollbar
 import com.example.ui.theme.TvAccent
 import com.example.ui.theme.TvBackground
 import com.example.ui.theme.TvFavoriteGold
@@ -39,7 +46,10 @@ fun FavoritesScreen(
     onChannelClick: (Channel) -> Unit,
     onToggleFavorite: (Channel) -> Unit,
     modifier: Modifier = Modifier,
-    onChannelOptions: ((Channel) -> Unit)? = null
+    onChannelOptions: ((Channel) -> Unit)? = null,
+    gridState: LazyGridState = rememberSaveable(saver = LazyGridState.Saver) { LazyGridState() },
+    contentFocusRequester: FocusRequester? = null,
+    onNavigateToRail: (() -> Unit)? = null
 ) {
     Column(
         modifier = modifier
@@ -92,19 +102,37 @@ fun FavoritesScreen(
             }
         } else {
             LazyVerticalGrid(
+                state = gridState,
                 columns = GridCells.Adaptive(minSize = 210.dp),
                 horizontalArrangement = Arrangement.spacedBy(16.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp),
                 contentPadding = PaddingValues(bottom = 32.dp),
-                modifier = Modifier.fillMaxSize()
+                modifier = Modifier
+                    .fillMaxSize()
+                    .tvVerticalScrollbar(gridState)
             ) {
-                items(favorites, key = { it.id }) { channel ->
+                itemsIndexed(favorites, key = { _, it -> it.id }) { index, channel ->
                     TvChannelCard(
                         channel = channel,
                         onClick = { onChannelClick(channel) },
                         onToggleFavorite = { onToggleFavorite(channel) },
                         onOptionsClick = onChannelOptions?.let { { it(channel) } },
-                        modifier = Modifier.fillMaxWidth()
+                        focusRequester = if (index == 0) contentFocusRequester else null,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .then(
+                                if (index == 0 && onNavigateToRail != null) {
+                                    Modifier.onPreviewKeyEvent { keyEvent ->
+                                        val native = keyEvent.nativeKeyEvent
+                                        if (native.action == android.view.KeyEvent.ACTION_DOWN &&
+                                            native.keyCode == android.view.KeyEvent.KEYCODE_DPAD_LEFT
+                                        ) {
+                                            onNavigateToRail()
+                                            true
+                                        } else false
+                                    }
+                                } else Modifier
+                            )
                     )
                 }
             }

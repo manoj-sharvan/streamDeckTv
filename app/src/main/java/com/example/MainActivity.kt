@@ -11,6 +11,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.History
@@ -18,8 +20,13 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
+import kotlinx.coroutines.delay
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.feature.channel.ChannelActionDialog
 import com.example.feature.channel.LanguageSelectDialog
@@ -36,11 +43,12 @@ import com.example.feature.settings.SettingsScreen
 import com.example.navigation.TvNavigationRail
 import com.example.ui.theme.MyApplicationTheme
 import com.example.ui.theme.TvBackground
+import com.example.di.AppViewModelFactory
 
 class MainActivity : ComponentActivity() {
 
     private val viewModel: MainViewModel by viewModels {
-        MainViewModelFactory(application as StreamDeckTvApp)
+        AppViewModelFactory((application as StreamDeckTvApp).appContainer)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -51,25 +59,33 @@ class MainActivity : ComponentActivity() {
             MyApplicationTheme {
                 MainAppContent(
                     viewModel = viewModel,
-                    onExitApp = { finish() }
+                    onExitApp = {
+                        viewModel.closePlayer()
+                        finish()
+                    }
                 )
             }
         }
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        (application as StreamDeckTvApp).appContainer.playerManager.stop()
     }
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
         return when (keyCode) {
             KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE,
             KeyEvent.KEYCODE_HEADSETHOOK -> {
-                (application as StreamDeckTvApp).playerManager.togglePlayPause()
+                (application as StreamDeckTvApp).appContainer.playerManager.togglePlayPause()
                 true
             }
             KeyEvent.KEYCODE_MEDIA_PLAY -> {
-                (application as StreamDeckTvApp).playerManager.getPlayer().play()
+                (application as StreamDeckTvApp).appContainer.playerManager.getPlayer().play()
                 true
             }
             KeyEvent.KEYCODE_MEDIA_PAUSE -> {
-                (application as StreamDeckTvApp).playerManager.getPlayer().pause()
+                (application as StreamDeckTvApp).appContainer.playerManager.getPlayer().pause()
                 true
             }
             KeyEvent.KEYCODE_MEDIA_NEXT,
@@ -118,6 +134,9 @@ fun MainAppContent(
     val importStatus by viewModel.importStatus.collectAsStateWithLifecycle()
     val isOnline by viewModel.isOnline.collectAsStateWithLifecycle()
     val refreshingPlaylistId by viewModel.refreshingPlaylistId.collectAsStateWithLifecycle()
+    val isAppInitializing by viewModel.isAppInitializing.collectAsStateWithLifecycle()
+    val isChannelsLoading by viewModel.isChannelsLoading.collectAsStateWithLifecycle()
+    val startupStatusMessage by viewModel.startupStatusMessage.collectAsStateWithLifecycle()
 
     // Dialog state flows
     val channelForActions by viewModel.channelForActions.collectAsStateWithLifecycle()
@@ -127,6 +146,42 @@ fun MainAppContent(
     val showClearCacheDialog by viewModel.showClearCacheDialog.collectAsStateWithLifecycle()
 
     var isAddPlaylistDialogOpen by remember { mutableStateOf(false) }
+
+    // Preserved Scroll States across tabs and player playback
+    val homeListState = rememberSaveable(saver = LazyListState.Saver) { LazyListState() }
+    val liveTvGridState = rememberSaveable(saver = LazyGridState.Saver) { LazyGridState() }
+    val favoritesGridState = rememberSaveable(saver = LazyGridState.Saver) { LazyGridState() }
+    val playlistsListState = rememberSaveable(saver = LazyListState.Saver) { LazyListState() }
+    val settingsListState = rememberSaveable(saver = LazyListState.Saver) { LazyListState() }
+
+    val contentFocusRequester = remember { FocusRequester() }
+    val railFocusRequester = remember { FocusRequester() }
+
+    val isPlayerActive = playerUiState.currentChannel != null
+
+    // Request initial focus on the rail when app finishes initializing
+    LaunchedEffect(isAppInitializing) {
+        if (!isAppInitializing) {
+            delay(150)
+            try {
+                railFocusRequester.requestFocus()
+            } catch (_: Exception) {}
+        }
+    }
+
+    // Automatically restore focus to channel catalog when returning from player
+    LaunchedEffect(isPlayerActive) {
+        if (!isPlayerActive) {
+            delay(120)
+            try {
+                contentFocusRequester.requestFocus()
+            } catch (_: Exception) {
+                try {
+                    railFocusRequester.requestFocus()
+                } catch (_: Exception) {}
+            }
+        }
+    }
 
     // Complete TV Back Navigation Handler
     BackHandler(enabled = true) {
@@ -141,126 +196,185 @@ fun MainAppContent(
         }
     }
 
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(TvBackground)
-    ) {
-        // Fullscreen Player has highest priority when playing
-        if (playerUiState.currentChannel != null) {
+    if (isAppInitializing) {
+        com.example.ui.components.TvStartupLoadingScreen(
+            statusMessage = startupStatusMessage,
+            subStatusMessage = "Connecting to TV services and loading channels…"
+        )
+    } else {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(TvBackground)
+        ) {
+        // TV Landscape Layout: Left Navigation Rail + Screen Content (retained across player transitions)
+        Row(
+            modifier = Modifier
+                .fillMaxSize()
+                .focusProperties { canFocus = !isPlayerActive }
+        ) {
+            TvNavigationRail(
+                currentTab = currentTab,
+                onTabSelected = { viewModel.selectTab(it) },
+                onNavigateToContent = {
+                    try {
+                        contentFocusRequester.requestFocus()
+                    } catch (_: Exception) {}
+                },
+                selectedTabFocusRequester = railFocusRequester
+            )
+
+            Box(modifier = Modifier.weight(1f)) {
+                when (currentTab) {
+                    NavTab.HOME -> {
+                        HomeScreen(
+                            listState = homeListState,
+                            playlists = playlists,
+                            activePlaylist = activePlaylist,
+                            channels = channels,
+                            recentChannels = recentChannels,
+                            favorites = favorites,
+                            languages = languages,
+                            contentCategories = contentCategories,
+                            isOnline = isOnline,
+                            isRefreshing = refreshingPlaylistId == activePlaylistId,
+                            isChannelsLoading = isChannelsLoading,
+                            contentFocusRequester = contentFocusRequester,
+                            onNavigateToRail = {
+                                try {
+                                    railFocusRequester.requestFocus()
+                                } catch (_: Exception) {}
+                            },
+                            onSelectPlaylist = { viewModel.selectPlaylist(it) },
+                            onChannelClick = { viewModel.playChannel(it) },
+                            onToggleFavorite = { viewModel.toggleFavorite(it) },
+                            onChannelOptions = { viewModel.openChannelActions(it) },
+                            onRefreshActivePlaylist = { viewModel.refreshActivePlaylist() },
+                            onOpenAddPlaylist = { isAddPlaylistDialogOpen = true },
+                            onLoadDemoChannels = { viewModel.loadDemoChannels() },
+                            onNavigateToLiveTv = { viewModel.selectTab(NavTab.LIVE_TV) },
+                            onNavigateToFavorites = { viewModel.selectTab(NavTab.FAVORITES) },
+                            onNavigateToPlaylists = { viewModel.selectTab(NavTab.PLAYLISTS) },
+                            onNavigateToLocalMedia = { viewModel.selectTab(NavTab.LOCAL_MEDIA) },
+                            onNavigateToSettings = { viewModel.selectTab(NavTab.SETTINGS) },
+                            onSelectLanguageAndNavigate = { lang ->
+                                viewModel.selectLanguage(lang)
+                                viewModel.selectTab(NavTab.LIVE_TV)
+                            },
+                            onSelectCategoryAndNavigate = { cat ->
+                                viewModel.selectContentCategory(cat)
+                                viewModel.selectTab(NavTab.LIVE_TV)
+                            }
+                        )
+                    }
+
+                    NavTab.LIVE_TV -> {
+                        LiveTvScreen(
+                            gridState = liveTvGridState,
+                            channels = channels,
+                            languages = languages,
+                            selectedLanguage = selectedLanguage,
+                            contentCategories = contentCategories,
+                            selectedContentCategory = selectedContentCategory,
+                            searchQuery = searchQuery,
+                            isOnline = isOnline,
+                            isChannelsLoading = isChannelsLoading,
+                            contentFocusRequester = contentFocusRequester,
+                            onNavigateToRail = {
+                                try {
+                                    railFocusRequester.requestFocus()
+                                } catch (_: Exception) {}
+                            },
+                            onLanguageSelect = { viewModel.selectLanguage(it) },
+                            onContentCategorySelect = { viewModel.selectContentCategory(it) },
+                            onSearchQueryChange = { viewModel.setSearchQuery(it) },
+                            onChannelClick = { viewModel.playChannel(it) },
+                            onToggleFavorite = { viewModel.toggleFavorite(it) },
+                            onChannelOptions = { viewModel.openChannelActions(it) }
+                        )
+                    }
+
+                    NavTab.FAVORITES -> {
+                        FavoritesScreen(
+                            gridState = favoritesGridState,
+                            favorites = favorites,
+                            contentFocusRequester = contentFocusRequester,
+                            onNavigateToRail = {
+                                try {
+                                    railFocusRequester.requestFocus()
+                                } catch (_: Exception) {}
+                            },
+                            onChannelClick = { viewModel.playChannel(it) },
+                            onToggleFavorite = { viewModel.toggleFavorite(it) },
+                            onChannelOptions = { viewModel.openChannelActions(it) }
+                        )
+                    }
+
+                    NavTab.PLAYLISTS -> {
+                        PlaylistsScreen(
+                            listState = playlistsListState,
+                            playlists = playlists,
+                            activePlaylistId = activePlaylistId,
+                            refreshingPlaylistId = refreshingPlaylistId,
+                            contentFocusRequester = contentFocusRequester,
+                            onNavigateToRail = {
+                                try {
+                                    railFocusRequester.requestFocus()
+                                } catch (_: Exception) {}
+                            },
+                            onSelectPlaylist = { viewModel.selectPlaylist(it) },
+                            onRefreshPlaylist = { viewModel.refreshPlaylist(it) },
+                            onRenamePlaylist = { id, name -> viewModel.renamePlaylist(id, name) },
+                            onDeletePlaylist = { viewModel.deletePlaylist(it) },
+                            onOpenAddPlaylist = { isAddPlaylistDialogOpen = true }
+                        )
+                    }
+
+                    NavTab.LOCAL_MEDIA -> {
+                        LocalMediaScreen(
+                            contentFocusRequester = contentFocusRequester,
+                            onNavigateToRail = {
+                                try {
+                                    railFocusRequester.requestFocus()
+                                } catch (_: Exception) {}
+                            },
+                            onPlayLocalFile = { uri, fileName ->
+                                viewModel.playLocalFile(uri, fileName)
+                            }
+                        )
+                    }
+
+                    NavTab.SETTINGS -> {
+                        SettingsScreen(
+                            listState = settingsListState,
+                            playlists = playlists,
+                            activePlaylistId = activePlaylistId,
+                            contentFocusRequester = contentFocusRequester,
+                            onNavigateToRail = {
+                                try {
+                                    railFocusRequester.requestFocus()
+                                } catch (_: Exception) {}
+                            },
+                            onSelectPlaylist = { viewModel.selectPlaylist(it) },
+                            onDeletePlaylist = { viewModel.deletePlaylist(it) },
+                            onAddPlaylistClick = { isAddPlaylistDialogOpen = true },
+                            onClearPlaybackHistoryClick = { viewModel.showClearHistoryDialog() },
+                            onClearCacheClick = { viewModel.showClearCacheDialog() }
+                        )
+                    }
+                }
+            }
+        }
+
+        // Fullscreen Player overlay when actively watching a channel/video
+        if (isPlayerActive) {
             PlayerScreen(
-                playerManager = StreamDeckTvApp.instance.playerManager,
+                playerManager = viewModel.playerManager,
                 uiState = playerUiState,
                 onNextChannel = { viewModel.playNextChannel() },
                 onPreviousChannel = { viewModel.playPreviousChannel() },
                 onBack = { viewModel.closePlayer() }
             )
-        } else {
-            // TV Landscape Layout: Left Navigation Rail + Screen Content
-            Row(modifier = Modifier.fillMaxSize()) {
-                TvNavigationRail(
-                    currentTab = currentTab,
-                    onTabSelected = { viewModel.selectTab(it) }
-                )
-
-                Box(modifier = Modifier.weight(1f)) {
-                    when (currentTab) {
-                        NavTab.HOME -> {
-                            HomeScreen(
-                                playlists = playlists,
-                                activePlaylist = activePlaylist,
-                                channels = channels,
-                                recentChannels = recentChannels,
-                                favorites = favorites,
-                                languages = languages,
-                                contentCategories = contentCategories,
-                                isOnline = isOnline,
-                                isRefreshing = refreshingPlaylistId == activePlaylistId,
-                                onSelectPlaylist = { viewModel.selectPlaylist(it) },
-                                onChannelClick = { viewModel.playChannel(it) },
-                                onToggleFavorite = { viewModel.toggleFavorite(it) },
-                                onChannelOptions = { viewModel.openChannelActions(it) },
-                                onRefreshActivePlaylist = { viewModel.refreshActivePlaylist() },
-                                onOpenAddPlaylist = { isAddPlaylistDialogOpen = true },
-                                onLoadDemoChannels = { viewModel.loadDemoChannels() },
-                                onNavigateToLiveTv = { viewModel.selectTab(NavTab.LIVE_TV) },
-                                onNavigateToFavorites = { viewModel.selectTab(NavTab.FAVORITES) },
-                                onNavigateToPlaylists = { viewModel.selectTab(NavTab.PLAYLISTS) },
-                                onNavigateToLocalMedia = { viewModel.selectTab(NavTab.LOCAL_MEDIA) },
-                                onNavigateToSettings = { viewModel.selectTab(NavTab.SETTINGS) },
-                                onSelectLanguageAndNavigate = { lang ->
-                                    viewModel.selectLanguage(lang)
-                                    viewModel.selectTab(NavTab.LIVE_TV)
-                                },
-                                onSelectCategoryAndNavigate = { cat ->
-                                    viewModel.selectContentCategory(cat)
-                                    viewModel.selectTab(NavTab.LIVE_TV)
-                                }
-                            )
-                        }
-
-                        NavTab.LIVE_TV -> {
-                            LiveTvScreen(
-                                channels = channels,
-                                languages = languages,
-                                selectedLanguage = selectedLanguage,
-                                contentCategories = contentCategories,
-                                selectedContentCategory = selectedContentCategory,
-                                searchQuery = searchQuery,
-                                isOnline = isOnline,
-                                onLanguageSelect = { viewModel.selectLanguage(it) },
-                                onContentCategorySelect = { viewModel.selectContentCategory(it) },
-                                onSearchQueryChange = { viewModel.setSearchQuery(it) },
-                                onChannelClick = { viewModel.playChannel(it) },
-                                onToggleFavorite = { viewModel.toggleFavorite(it) },
-                                onChannelOptions = { viewModel.openChannelActions(it) }
-                            )
-                        }
-
-                        NavTab.FAVORITES -> {
-                            FavoritesScreen(
-                                favorites = favorites,
-                                onChannelClick = { viewModel.playChannel(it) },
-                                onToggleFavorite = { viewModel.toggleFavorite(it) },
-                                onChannelOptions = { viewModel.openChannelActions(it) }
-                            )
-                        }
-
-                        NavTab.PLAYLISTS -> {
-                            PlaylistsScreen(
-                                playlists = playlists,
-                                activePlaylistId = activePlaylistId,
-                                refreshingPlaylistId = refreshingPlaylistId,
-                                onSelectPlaylist = { viewModel.selectPlaylist(it) },
-                                onRefreshPlaylist = { viewModel.refreshPlaylist(it) },
-                                onRenamePlaylist = { id, name -> viewModel.renamePlaylist(id, name) },
-                                onDeletePlaylist = { viewModel.deletePlaylist(it) },
-                                onOpenAddPlaylist = { isAddPlaylistDialogOpen = true }
-                            )
-                        }
-
-                        NavTab.LOCAL_MEDIA -> {
-                            LocalMediaScreen(
-                                onPlayLocalFile = { uri, fileName ->
-                                    viewModel.playLocalFile(uri, fileName)
-                                }
-                            )
-                        }
-
-                        NavTab.SETTINGS -> {
-                            SettingsScreen(
-                                playlists = playlists,
-                                activePlaylistId = activePlaylistId,
-                                onSelectPlaylist = { viewModel.selectPlaylist(it) },
-                                onDeletePlaylist = { viewModel.deletePlaylist(it) },
-                                onAddPlaylistClick = { isAddPlaylistDialogOpen = true },
-                                onClearPlaybackHistoryClick = { viewModel.showClearHistoryDialog() },
-                                onClearCacheClick = { viewModel.showClearCacheDialog() }
-                            )
-                        }
-                    }
-                }
-            }
         }
 
         // Add Custom Playlist Modal Dialog
@@ -351,4 +465,5 @@ fun MainAppContent(
             )
         }
     }
+}
 }

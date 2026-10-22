@@ -17,9 +17,15 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Clear
@@ -30,18 +36,26 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.domain.model.Channel
 import com.example.ui.components.TvCategoryChip
 import com.example.ui.components.TvChannelCard
+import com.example.ui.components.tvVerticalScrollbar
 import com.example.ui.theme.TvAccent
 import com.example.ui.theme.TvBackground
 import com.example.ui.theme.TvFavoriteGold
@@ -66,7 +80,11 @@ fun LiveTvScreen(
     onToggleFavorite: (Channel) -> Unit,
     onChannelOptions: (Channel) -> Unit,
     modifier: Modifier = Modifier,
-    isOnline: Boolean = true
+    isOnline: Boolean = true,
+    isChannelsLoading: Boolean = false,
+    gridState: LazyGridState = rememberSaveable(saver = LazyGridState.Saver) { LazyGridState() },
+    contentFocusRequester: FocusRequester? = null,
+    onNavigateToRail: (() -> Unit)? = null
 ) {
     // Unicode-aware case-insensitive multi-field search and category filtering
     val filteredChannels = remember(channels, selectedLanguage, selectedContentCategory, searchQuery) {
@@ -76,6 +94,21 @@ fun LiveTvScreen(
             selectedLanguage = selectedLanguage,
             selectedCategory = selectedContentCategory
         )
+    }
+
+    val searchFocusRequester = remember { FocusRequester() }
+    val firstChannelFocusRequester = remember { FocusRequester() }
+    val focusManager = LocalFocusManager.current
+
+    // Only scroll to top when user explicitly changes filters or search query, preserving last scroll when returning from player
+    var previousFilterKey by rememberSaveable { mutableStateOf<String?>(null) }
+    val currentFilterKey = "$searchQuery|$selectedContentCategory|$selectedLanguage"
+
+    LaunchedEffect(currentFilterKey) {
+        if (previousFilterKey != null && previousFilterKey != currentFilterKey) {
+            gridState.scrollToItem(0)
+        }
+        previousFilterKey = currentFilterKey
     }
 
     Column(
@@ -161,6 +194,23 @@ fun LiveTvScreen(
                 modifier = Modifier
                     .widthIn(min = 220.dp, max = 360.dp)
                     .height(50.dp)
+                    .focusRequester(searchFocusRequester)
+                    .onPreviewKeyEvent { keyEvent ->
+                        val native = keyEvent.nativeKeyEvent
+                        if (native.action == android.view.KeyEvent.ACTION_DOWN) {
+                            when (native.keyCode) {
+                                android.view.KeyEvent.KEYCODE_DPAD_DOWN -> {
+                                    contentFocusRequester?.requestFocus()
+                                    true
+                                }
+                                android.view.KeyEvent.KEYCODE_DPAD_LEFT -> {
+                                    onNavigateToRail?.invoke()
+                                    true
+                                }
+                                else -> false
+                            }
+                        } else false
+                    }
                     .testTag("live_tv_search_input"),
                 colors = OutlinedTextFieldDefaults.colors(
                     focusedTextColor = TvTextPrimary,
@@ -187,12 +237,32 @@ fun LiveTvScreen(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     contentPadding = PaddingValues(vertical = 2.dp)
                 ) {
-                    items(languages) { lang ->
+                    itemsIndexed(languages) { index, lang ->
                         val isSelected = (selectedLanguage ?: "All").equals(lang, ignoreCase = true)
                         TvCategoryChip(
                             category = lang,
                             isSelected = isSelected,
-                            onClick = { onLanguageSelect(lang) }
+                            onClick = { onLanguageSelect(lang) },
+                            modifier = Modifier
+                                .then(if (index == 0 && contentFocusRequester != null) Modifier.focusRequester(contentFocusRequester) else Modifier)
+                                .onPreviewKeyEvent { keyEvent ->
+                                    val native = keyEvent.nativeKeyEvent
+                                    if (native.action == android.view.KeyEvent.ACTION_DOWN) {
+                                        when (native.keyCode) {
+                                            android.view.KeyEvent.KEYCODE_DPAD_LEFT -> {
+                                                if (index == 0 && onNavigateToRail != null) {
+                                                    onNavigateToRail()
+                                                    true
+                                                } else false
+                                            }
+                                            android.view.KeyEvent.KEYCODE_DPAD_UP -> {
+                                                searchFocusRequester.requestFocus()
+                                                true
+                                            }
+                                            else -> false
+                                        }
+                                    } else false
+                                }
                         )
                     }
                 }
@@ -215,12 +285,29 @@ fun LiveTvScreen(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     contentPadding = PaddingValues(vertical = 2.dp)
                 ) {
-                    items(contentCategories) { category ->
+                    itemsIndexed(contentCategories) { index, category ->
                         val isSelected = (selectedContentCategory ?: "All").equals(category, ignoreCase = true)
                         TvCategoryChip(
                             category = category,
                             isSelected = isSelected,
-                            onClick = { onContentCategorySelect(category) }
+                            onClick = { onContentCategorySelect(category) },
+                            modifier = Modifier.onPreviewKeyEvent { keyEvent ->
+                                val native = keyEvent.nativeKeyEvent
+                                if (native.action == android.view.KeyEvent.ACTION_DOWN) {
+                                    when (native.keyCode) {
+                                        android.view.KeyEvent.KEYCODE_DPAD_LEFT -> {
+                                            if (index == 0 && onNavigateToRail != null) {
+                                                onNavigateToRail()
+                                                true
+                                            } else false
+                                        }
+                                        android.view.KeyEvent.KEYCODE_DPAD_DOWN -> {
+                                            focusManager.moveFocus(FocusDirection.Down)
+                                        }
+                                        else -> false
+                                    }
+                                } else false
+                            }
                         )
                     }
                 }
@@ -229,7 +316,20 @@ fun LiveTvScreen(
 
         Spacer(modifier = Modifier.height(14.dp))
 
-        if (filteredChannels.isEmpty()) {
+        if (isChannelsLoading) {
+            LazyVerticalGrid(
+                state = gridState,
+                columns = GridCells.Adaptive(minSize = 210.dp),
+                horizontalArrangement = Arrangement.spacedBy(16.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+                contentPadding = PaddingValues(bottom = 32.dp),
+                modifier = Modifier.fillMaxSize()
+            ) {
+                items(12) {
+                    com.example.ui.components.TvChannelCardSkeleton(modifier = Modifier.fillMaxWidth())
+                }
+            }
+        } else if (filteredChannels.isEmpty()) {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -257,19 +357,38 @@ fun LiveTvScreen(
             }
         } else {
             LazyVerticalGrid(
+                state = gridState,
                 columns = GridCells.Adaptive(minSize = 210.dp),
                 horizontalArrangement = Arrangement.spacedBy(16.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp),
                 contentPadding = PaddingValues(bottom = 32.dp),
-                modifier = Modifier.fillMaxSize()
+                modifier = Modifier
+                    .fillMaxSize()
+                    .tvVerticalScrollbar(gridState)
             ) {
-                items(filteredChannels, key = { it.id }) { channel ->
+                itemsIndexed(filteredChannels, key = { _, it -> it.id }) { index, channel ->
                     TvChannelCard(
                         channel = channel,
                         onClick = { onChannelClick(channel) },
                         onToggleFavorite = { onToggleFavorite(channel) },
                         onOptionsClick = { onChannelOptions(channel) },
-                        modifier = Modifier.fillMaxWidth()
+                        onCategoryClick = { cat -> onContentCategorySelect(cat) },
+                        focusRequester = if (index == 0) firstChannelFocusRequester else null,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .then(
+                                if (index == 0 && onNavigateToRail != null) {
+                                    Modifier.onPreviewKeyEvent { keyEvent ->
+                                        val native = keyEvent.nativeKeyEvent
+                                        if (native.action == android.view.KeyEvent.ACTION_DOWN &&
+                                            native.keyCode == android.view.KeyEvent.KEYCODE_DPAD_LEFT
+                                        ) {
+                                            onNavigateToRail()
+                                            true
+                                        } else false
+                                    }
+                                } else Modifier
+                            )
                     )
                 }
             }

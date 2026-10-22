@@ -30,6 +30,7 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -37,7 +38,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import kotlinx.coroutines.delay
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -47,7 +51,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.example.data.parser.PlaylistValidator
 import com.example.data.parser.ValidationResult
-import com.example.data.repository.ImportStatus
+import com.example.domain.model.ImportStatus
 import com.example.ui.components.TvFocusableButton
 import com.example.ui.theme.TvAccent
 import com.example.ui.theme.TvLiveRed
@@ -71,6 +75,15 @@ fun AddPlaylistDialog(
     var urlText by remember { mutableStateOf("") }
     var playlistNameText by remember { mutableStateOf("") }
     var localValidationError by remember { mutableStateOf<String?>(null) }
+
+    val urlFocusRequester = remember { FocusRequester() }
+
+    LaunchedEffect(Unit) {
+        delay(120)
+        try {
+            urlFocusRequester.requestFocus()
+        } catch (_: Exception) {}
+    }
 
     // SAF Document Picker for local M3U / M3U8 files
     val filePickerLauncher = rememberLauncherForActivityResult(
@@ -100,13 +113,13 @@ fun AddPlaylistDialog(
                     .padding(24.dp)
             ) {
                 Text(
-                    text = "Add Custom M3U / M3U8 Playlist",
+                    text = "Add Playlist",
                     color = TvTextPrimary,
                     fontSize = 20.sp,
                     fontWeight = FontWeight.Bold
                 )
                 Text(
-                    text = "Provide an HTTP/HTTPS playlist URL, pick a local M3U file, or load public demo channels.",
+                    text = "Enter a playlist web link, choose a file from your device, or try sample channels.",
                     color = TvTextSecondary,
                     fontSize = 13.sp,
                     modifier = Modifier.padding(top = 4.dp, bottom = 16.dp)
@@ -124,10 +137,10 @@ fun AddPlaylistDialog(
                                 .padding(12.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(22.dp),
-                                color = TvPrimary,
-                                strokeWidth = 2.dp
+                            com.example.ui.components.TvSpinner(
+                                size = com.example.ui.components.TvSpinnerSize.Small,
+                                primaryColor = TvPrimary,
+                                secondaryColor = TvAccent
                             )
                             Spacer(modifier = Modifier.width(12.dp))
                             Text(
@@ -265,11 +278,12 @@ fun AddPlaylistDialog(
                         urlText = it
                         localValidationError = null
                     },
-                    label = { Text("M3U / M3U8 Playlist URL (HTTP or HTTPS)") },
+                    label = { Text("Playlist Web Link (URL)") },
                     placeholder = { Text("https://example.com/stream/playlist.m3u") },
                     singleLine = true,
                     modifier = Modifier
                         .fillMaxWidth()
+                        .focusRequester(urlFocusRequester)
                         .testTag("input_playlist_url"),
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedTextColor = TvTextPrimary,
@@ -290,7 +304,7 @@ fun AddPlaylistDialog(
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     TvFocusableButton(
-                        text = "Save & Import",
+                        text = "Add Link",
                         icon = Icons.Default.CloudDownload,
                         onClick = {
                             val validation = PlaylistValidator.validateUrl(urlText)
@@ -306,7 +320,7 @@ fun AddPlaylistDialog(
                     )
 
                     TvFocusableButton(
-                        text = "Open Local File",
+                        text = "Choose File",
                         icon = Icons.Default.FolderOpen,
                         onClick = {
                             filePickerLauncher.launch(arrayOf("*/*", "application/x-mpegURL", "audio/x-mpegurl"))
@@ -315,7 +329,7 @@ fun AddPlaylistDialog(
                     )
 
                     TvFocusableButton(
-                        text = "Load Demo",
+                        text = "Sample Channels",
                         icon = Icons.Default.PlayCircleOutline,
                         onClick = onLoadDemo,
                         tag = "btn_load_demo"

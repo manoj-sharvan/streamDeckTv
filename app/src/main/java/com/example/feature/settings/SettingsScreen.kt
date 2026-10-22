@@ -16,6 +16,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.PlaylistPlay
@@ -40,6 +42,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.input.key.onPreviewKeyEvent
 import com.example.R
 import com.example.domain.model.Playlist
 import com.example.ui.components.TvFocusableButton
@@ -63,9 +68,13 @@ fun SettingsScreen(
     onAddPlaylistClick: () -> Unit,
     onClearPlaybackHistoryClick: () -> Unit,
     onClearCacheClick: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    listState: LazyListState = rememberSaveable(saver = LazyListState.Saver) { LazyListState() },
+    contentFocusRequester: FocusRequester? = null,
+    onNavigateToRail: (() -> Unit)? = null
 ) {
     LazyColumn(
+        state = listState,
         modifier = modifier
             .fillMaxSize()
             .background(TvBackground)
@@ -76,13 +85,13 @@ fun SettingsScreen(
     ) {
         item {
             Text(
-                text = "Settings & Device Preferences",
+                text = "Settings",
                 color = TvTextPrimary,
                 fontSize = 24.sp,
                 fontWeight = FontWeight.Bold
             )
             Text(
-                text = "Manage your playlists, storage cache, history, and TV remote shortcuts.",
+                text = "Customize your playlists, storage, and remote shortcuts.",
                 color = TvAccent,
                 fontSize = 13.sp,
                 modifier = Modifier.padding(top = 2.dp)
@@ -94,9 +103,9 @@ fun SettingsScreen(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(12.dp))
+                    .clip(RoundedCornerShape(14.dp))
                     .background(TvSurface)
-                    .border(1.dp, TvSurfaceVariant, RoundedCornerShape(12.dp))
+                    .border(1.dp, TvSurfaceVariant, RoundedCornerShape(14.dp))
                     .padding(20.dp)
             ) {
                 Row(
@@ -113,7 +122,7 @@ fun SettingsScreen(
                         )
                         Spacer(modifier = Modifier.width(10.dp))
                         Text(
-                            text = "Managed Playlists (${playlists.size})",
+                            text = "Your Playlists (${playlists.size})",
                             color = TvTextPrimary,
                             fontSize = 17.sp,
                             fontWeight = FontWeight.Bold
@@ -121,10 +130,25 @@ fun SettingsScreen(
                     }
 
                     TvFocusableButton(
-                        text = "Add New",
+                        text = "Add Playlist",
                         onClick = onAddPlaylistClick,
                         isPrimary = true,
-                        tag = "settings_btn_add_playlist"
+                        tag = "settings_btn_add_playlist",
+                        modifier = Modifier
+                            .then(if (contentFocusRequester != null) Modifier.focusRequester(contentFocusRequester) else Modifier)
+                            .then(
+                                if (onNavigateToRail != null) {
+                                    Modifier.onPreviewKeyEvent { keyEvent ->
+                                        val native = keyEvent.nativeKeyEvent
+                                        if (native.action == android.view.KeyEvent.ACTION_DOWN &&
+                                            native.keyCode == android.view.KeyEvent.KEYCODE_DPAD_LEFT
+                                        ) {
+                                            onNavigateToRail()
+                                            true
+                                        } else false
+                                    }
+                                } else Modifier
+                            )
                     )
                 }
 
@@ -132,7 +156,7 @@ fun SettingsScreen(
 
                 if (playlists.isEmpty()) {
                     Text(
-                        text = "No playlists stored. Import an M3U file or URL to get started.",
+                        text = "No playlists yet. Add a web link or open a file to start watching.",
                         color = TvTextSecondary,
                         fontSize = 13.sp
                     )
@@ -204,7 +228,7 @@ fun SettingsScreen(
                                     }
                                     Spacer(modifier = Modifier.height(2.dp))
                                     Text(
-                                        text = "${playlist.channelCount} channels • ${if (playlist.isLocal) "Local SAF File" else "Remote URL"}",
+                                        text = "${playlist.channelCount} channels • ${if (playlist.isLocal) "From Device" else "Online Stream"}",
                                         color = TvTextSecondary,
                                         fontSize = 12.sp,
                                         maxLines = 1,
@@ -221,7 +245,18 @@ fun SettingsScreen(
                                             text = "Activate",
                                             icon = Icons.Default.Check,
                                             onClick = { onSelectPlaylist(playlist.id) },
-                                            tag = "btn_activate_${playlist.id}"
+                                            tag = "btn_activate_${playlist.id}",
+                                            modifier = if (onNavigateToRail != null) {
+                                                Modifier.onPreviewKeyEvent { keyEvent ->
+                                                    val native = keyEvent.nativeKeyEvent
+                                                    if (native.action == android.view.KeyEvent.ACTION_DOWN &&
+                                                        native.keyCode == android.view.KeyEvent.KEYCODE_DPAD_LEFT
+                                                    ) {
+                                                        onNavigateToRail()
+                                                        true
+                                                    } else false
+                                                }
+                                            } else Modifier
                                         )
                                     }
 
@@ -230,7 +265,18 @@ fun SettingsScreen(
                                             text = "Delete",
                                             icon = Icons.Default.Delete,
                                             onClick = { onDeletePlaylist(playlist.id) },
-                                            tag = "btn_delete_${playlist.id}"
+                                            tag = "btn_delete_${playlist.id}",
+                                            modifier = if (isActive && onNavigateToRail != null) {
+                                                Modifier.onPreviewKeyEvent { keyEvent ->
+                                                    val native = keyEvent.nativeKeyEvent
+                                                    if (native.action == android.view.KeyEvent.ACTION_DOWN &&
+                                                        native.keyCode == android.view.KeyEvent.KEYCODE_DPAD_LEFT
+                                                    ) {
+                                                        onNavigateToRail()
+                                                        true
+                                                    } else false
+                                                }
+                                            } else Modifier
                                         )
                                     }
                                 }
@@ -246,9 +292,9 @@ fun SettingsScreen(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(12.dp))
+                    .clip(RoundedCornerShape(14.dp))
                     .background(TvSurface)
-                    .border(1.dp, TvSurfaceVariant, RoundedCornerShape(12.dp))
+                    .border(1.dp, TvSurfaceVariant, RoundedCornerShape(14.dp))
                     .padding(20.dp)
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -260,7 +306,7 @@ fun SettingsScreen(
                     )
                     Spacer(modifier = Modifier.width(10.dp))
                     Text(
-                        text = "Data & Storage Management",
+                        text = "Storage & Data",
                         color = TvTextPrimary,
                         fontSize = 17.sp,
                         fontWeight = FontWeight.Bold
@@ -269,7 +315,7 @@ fun SettingsScreen(
 
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    text = "Perform safe maintenance on your Room database. Favorites and playlist configurations are always preserved.",
+                    text = "Free up temporary cached data. Your playlists and favorite channels will always be preserved.",
                     color = TvTextSecondary,
                     fontSize = 13.sp,
                     lineHeight = 18.sp
@@ -282,14 +328,25 @@ fun SettingsScreen(
                     horizontalArrangement = Arrangement.spacedBy(14.dp)
                 ) {
                     TvFocusableButton(
-                        text = "Clear Playback History",
+                        text = "Clear Watch History",
                         icon = Icons.Default.History,
                         onClick = onClearPlaybackHistoryClick,
-                        tag = "btn_settings_clear_history"
+                        tag = "btn_settings_clear_history",
+                        modifier = if (onNavigateToRail != null) {
+                            Modifier.onPreviewKeyEvent { keyEvent ->
+                                val native = keyEvent.nativeKeyEvent
+                                if (native.action == android.view.KeyEvent.ACTION_DOWN &&
+                                    native.keyCode == android.view.KeyEvent.KEYCODE_DPAD_LEFT
+                                ) {
+                                    onNavigateToRail()
+                                    true
+                                } else false
+                            }
+                        } else Modifier
                     )
 
                     TvFocusableButton(
-                        text = "Clear Channel Cache",
+                        text = "Free Up Cached Data",
                         icon = Icons.Default.Delete,
                         onClick = onClearCacheClick,
                         tag = "btn_settings_clear_cache"
@@ -303,9 +360,9 @@ fun SettingsScreen(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(12.dp))
+                    .clip(RoundedCornerShape(14.dp))
                     .background(TvSurface)
-                    .border(1.dp, TvSurfaceVariant, RoundedCornerShape(12.dp))
+                    .border(1.dp, TvSurfaceVariant, RoundedCornerShape(14.dp))
                     .padding(20.dp)
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -317,7 +374,7 @@ fun SettingsScreen(
                     )
                     Spacer(modifier = Modifier.width(10.dp))
                     Text(
-                        text = "Android TV Remote Control Guide",
+                        text = "Remote Control Shortcuts",
                         color = TvTextPrimary,
                         fontSize = 17.sp,
                         fontWeight = FontWeight.Bold
@@ -327,12 +384,11 @@ fun SettingsScreen(
                 Spacer(modifier = Modifier.height(12.dp))
 
                 Text(
-                    text = "• D-Pad Left / Right: Navigate between sidebar, category filters, and channels.\n" +
-                            "• D-Pad Up / Down: Traverse channel rows and menu items.\n" +
-                            "• D-Pad Center (Select / Enter): Tune channel, toggle play/pause, activate buttons.\n" +
-                            "• Menu Key / Options: Open channel actions (Play, Favorite, Manual Language edit).\n" +
-                            "• Back Button: Return from video player to live TV guide, or from sub-screens to Home.\n" +
-                            "• Media Play/Pause keys: Directly toggle video playback.",
+                    text = "• Arrow Buttons: Browse through menus, categories, and channels.\n" +
+                            "• Center Button (OK): Watch channel, play/pause video, or choose an item.\n" +
+                            "• Back Button: Return to the previous screen or close the video player.\n" +
+                            "• Menu Key: Quick options to favorite or edit a channel.\n" +
+                            "• Play / Pause: Instantly control playback anytime.",
                     color = TvTextSecondary,
                     fontSize = 13.sp,
                     lineHeight = 20.sp
@@ -345,9 +401,9 @@ fun SettingsScreen(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(12.dp))
+                    .clip(RoundedCornerShape(14.dp))
                     .background(TvSurface)
-                    .border(1.dp, TvSurfaceVariant, RoundedCornerShape(12.dp))
+                    .border(1.dp, TvSurfaceVariant, RoundedCornerShape(14.dp))
                     .padding(20.dp)
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -359,7 +415,7 @@ fun SettingsScreen(
                     )
                     Spacer(modifier = Modifier.width(10.dp))
                     Text(
-                        text = "Application Information",
+                        text = "About StreamDeck",
                         color = TvTextPrimary,
                         fontSize = 17.sp,
                         fontWeight = FontWeight.Bold
@@ -369,9 +425,8 @@ fun SettingsScreen(
                 Spacer(modifier = Modifier.height(10.dp))
 
                 Text(
-                    text = "StreamDeck TV — Android TV IPTV Player\n" +
-                            "Version: 1.0.0 (Release)\n" +
-                            "Features: Tamil TV default feed, Custom M3U playlists, D-Pad Remote Control, Dynamic Language & Content Classification, Offline Room Cache, Media3 ExoPlayer.",
+                    text = "StreamDeck TV — Version 1.0.0\n" +
+                            "A modern TV media player supporting live channels, custom playlists, and offline videos.",
                     color = TvTextSecondary,
                     fontSize = 13.sp,
                     lineHeight = 19.sp
@@ -384,9 +439,9 @@ fun SettingsScreen(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(12.dp))
+                    .clip(RoundedCornerShape(14.dp))
                     .background(TvSurface)
-                    .border(1.dp, TvSurfaceVariant, RoundedCornerShape(12.dp))
+                    .border(1.dp, TvSurfaceVariant, RoundedCornerShape(14.dp))
                     .padding(20.dp)
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -398,7 +453,7 @@ fun SettingsScreen(
                     )
                     Spacer(modifier = Modifier.width(10.dp))
                     Text(
-                        text = "Legal Disclaimer & Policy Compliance",
+                        text = "About Content & Sources",
                         color = TvTextPrimary,
                         fontSize = 16.sp,
                         fontWeight = FontWeight.Bold
@@ -408,7 +463,7 @@ fun SettingsScreen(
                 Spacer(modifier = Modifier.height(8.dp))
 
                 Text(
-                    text = "StreamDeck TV is an open media player application. It does not host, provide, broadcast, or bundle any television streams, IPTV subscriptions, or copyrighted media. Users must import their own legally obtained M3U playlists or local media files. Demo streams are public domain and Creative Commons authorized samples.",
+                    text = "StreamDeck TV is an independent media player that lets you enjoy your own content. It does not provide, host, or broadcast any media or channels. Please ensure you have the rights to any links or playlists you add.",
                     color = TvTextSecondary,
                     fontSize = 12.sp,
                     lineHeight = 17.sp
@@ -421,32 +476,32 @@ fun SettingsScreen(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(12.dp))
+                    .clip(RoundedCornerShape(14.dp))
                     .background(TvSurface)
-                    .border(1.dp, TvSurfaceVariant, RoundedCornerShape(12.dp))
+                    .border(1.dp, TvSurfaceVariant, RoundedCornerShape(14.dp))
                     .padding(20.dp)
             ) {
                 Text(
-                    text = "Android TV Launcher Banner (320 × 180 px)",
+                    text = "Home Screen Banner Preview",
                     color = TvTextPrimary,
                     fontSize = 16.sp,
                     fontWeight = FontWeight.Bold
                 )
                 Spacer(modifier = Modifier.height(6.dp))
                 Text(
-                    text = "Official leanback banner displayed in the Android TV and Google TV home screen carousel.",
+                    text = "Banner shown on your TV home screen launcher.",
                     color = TvTextSecondary,
                     fontSize = 12.sp
                 )
                 Spacer(modifier = Modifier.height(14.dp))
                 Image(
                     painter = painterResource(id = R.drawable.tv_banner),
-                    contentDescription = "Android TV Launcher Banner",
+                    contentDescription = "TV Launcher Banner",
                     modifier = Modifier
                         .width(320.dp)
                         .height(180.dp)
-                        .clip(RoundedCornerShape(10.dp))
-                        .border(1.dp, TvPrimary.copy(alpha = 0.5f), RoundedCornerShape(10.dp)),
+                        .clip(RoundedCornerShape(12.dp))
+                        .border(1.dp, TvPrimary.copy(alpha = 0.5f), RoundedCornerShape(12.dp)),
                     contentScale = ContentScale.Fit
                 )
             }

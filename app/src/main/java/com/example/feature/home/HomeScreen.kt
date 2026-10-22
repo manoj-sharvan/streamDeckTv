@@ -17,9 +17,17 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.PlaylistPlay
 import androidx.compose.material.icons.filled.Add
@@ -58,9 +66,11 @@ import com.example.ui.components.TvCategoryChip
 import com.example.ui.components.TvChannelCard
 import com.example.ui.components.TvFocusableButton
 import com.example.ui.components.TvFocusableCard
+import com.example.ui.components.tvVerticalScrollbar
 import com.example.ui.theme.TvAccent
 import com.example.ui.theme.TvBackground
 import com.example.ui.theme.TvFavoriteGold
+import com.example.ui.theme.TvLiveRed
 import com.example.ui.theme.TvPrimary
 import com.example.ui.theme.TvSurface
 import com.example.ui.theme.TvSurfaceCard
@@ -83,6 +93,7 @@ fun HomeScreen(
     contentCategories: List<String>,
     isOnline: Boolean,
     isRefreshing: Boolean,
+    isChannelsLoading: Boolean = false,
     onSelectPlaylist: (Long) -> Unit,
     onChannelClick: (Channel) -> Unit,
     onToggleFavorite: (Channel) -> Unit,
@@ -97,9 +108,18 @@ fun HomeScreen(
     onNavigateToSettings: () -> Unit,
     onSelectLanguageAndNavigate: (String) -> Unit,
     onSelectCategoryAndNavigate: (String) -> Unit,
-    modifier: Modifier = Modifier
+    contentFocusRequester: FocusRequester? = null,
+    onNavigateToRail: (() -> Unit)? = null,
+    modifier: Modifier = Modifier,
+    listState: LazyListState = rememberSaveable(saver = LazyListState.Saver) { LazyListState() }
 ) {
     var currentTimeString by remember { mutableStateOf("") }
+
+    val refreshBtnFocusRequester = remember { FocusRequester() }
+    val addPlaylistBtnFocusRequester = remember { FocusRequester() }
+    val viewAllFavoritesFocusRequester = remember { FocusRequester() }
+    val viewAllChannelsFocusRequester = remember { FocusRequester() }
+    val heroBannerFocusRequester = contentFocusRequester ?: remember { FocusRequester() }
 
     LaunchedEffect(Unit) {
         val formatter = SimpleDateFormat("HH:mm · EEE, MMM d", Locale.getDefault())
@@ -153,6 +173,12 @@ fun HomeScreen(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
+                if (isRefreshing) {
+                    com.example.ui.components.TvSyncPill(
+                        message = "Syncing ${activePlaylist?.name ?: "Channels"}…"
+                    )
+                }
+
                 Text(
                     text = currentTimeString,
                     color = TvTextSecondary,
@@ -167,7 +193,29 @@ fun HomeScreen(
                         text = if (isRefreshing) "Refreshing…" else "Refresh",
                         icon = Icons.Default.Refresh,
                         onClick = onRefreshActivePlaylist,
-                        tag = "home_btn_refresh_playlist"
+                        tag = "home_btn_refresh_playlist",
+                        modifier = Modifier
+                            .focusRequester(refreshBtnFocusRequester)
+                            .onPreviewKeyEvent { keyEvent ->
+                                val native = keyEvent.nativeKeyEvent
+                                if (native.action == android.view.KeyEvent.ACTION_DOWN) {
+                                    when (native.keyCode) {
+                                        android.view.KeyEvent.KEYCODE_DPAD_LEFT -> {
+                                            onNavigateToRail?.invoke()
+                                            true
+                                        }
+                                        android.view.KeyEvent.KEYCODE_DPAD_RIGHT -> {
+                                            addPlaylistBtnFocusRequester.requestFocus()
+                                            true
+                                        }
+                                        android.view.KeyEvent.KEYCODE_DPAD_DOWN -> {
+                                            heroBannerFocusRequester.requestFocus()
+                                            true
+                                        }
+                                        else -> false
+                                    }
+                                } else false
+                            }
                     )
                 }
 
@@ -176,7 +224,29 @@ fun HomeScreen(
                     icon = Icons.Default.Add,
                     onClick = onOpenAddPlaylist,
                     isPrimary = true,
-                    tag = "home_btn_add_playlist"
+                    tag = "home_btn_add_playlist",
+                    modifier = Modifier
+                        .focusRequester(addPlaylistBtnFocusRequester)
+                        .onPreviewKeyEvent { keyEvent ->
+                            val native = keyEvent.nativeKeyEvent
+                            if (native.action == android.view.KeyEvent.ACTION_DOWN) {
+                                when (native.keyCode) {
+                                    android.view.KeyEvent.KEYCODE_DPAD_LEFT -> {
+                                        if (activePlaylist != null) {
+                                            refreshBtnFocusRequester.requestFocus()
+                                        } else {
+                                            onNavigateToRail?.invoke()
+                                        }
+                                        true
+                                    }
+                                    android.view.KeyEvent.KEYCODE_DPAD_DOWN -> {
+                                        heroBannerFocusRequester.requestFocus()
+                                        true
+                                    }
+                                    else -> false
+                                }
+                            } else false
+                        }
                 )
             }
         }
@@ -218,7 +288,10 @@ fun HomeScreen(
             )
         } else {
             LazyColumn(
-                modifier = Modifier.fillMaxSize(),
+                state = listState,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .tvVerticalScrollbar(listState),
                 contentPadding = PaddingValues(bottom = 32.dp),
                 verticalArrangement = Arrangement.spacedBy(22.dp)
             ) {
@@ -259,7 +332,16 @@ fun HomeScreen(
                     HeroQuickWatchBanner(
                         activePlaylist = activePlaylist,
                         channelCount = channels.size,
-                        onNavigateToLiveTv = onNavigateToLiveTv
+                        onNavigateToLiveTv = onNavigateToLiveTv,
+                        focusRequester = heroBannerFocusRequester,
+                        onNavigateToRail = onNavigateToRail,
+                        onNavigateUp = {
+                            if (activePlaylist != null) {
+                                refreshBtnFocusRequester.requestFocus()
+                            } else {
+                                addPlaylistBtnFocusRequester.requestFocus()
+                            }
+                        }
                     )
                 }
 
@@ -275,6 +357,7 @@ fun HomeScreen(
                             icon = Icons.Default.Star,
                             iconTint = TvFavoriteGold,
                             onClick = onNavigateToFavorites,
+                            onNavigateToRail = onNavigateToRail,
                             modifier = Modifier.weight(1f)
                         )
                         HomeNavCard(
@@ -354,11 +437,13 @@ fun HomeScreen(
                         Spacer(modifier = Modifier.height(12.dp))
 
                         if (last5Recent.isNotEmpty()) {
+                            val channelsMap = remember(channels) { channels.associateBy { it.id } }
                             LazyRow(
                                 horizontalArrangement = Arrangement.spacedBy(16.dp)
                             ) {
-                                items(last5Recent, key = { it.channelId }) { history ->
-                                    val matchedChannel = channels.firstOrNull { it.id == history.channelId || it.streamUrl == history.streamUrl }
+                                itemsIndexed(last5Recent, key = { _, history -> history.channelId }) { index, history ->
+                                    val matchedChannel = channelsMap[history.channelId]
+                                        ?: channels.firstOrNull { it.streamUrl == history.streamUrl }
                                         ?: Channel(
                                             id = history.channelId,
                                             playlistId = activePlaylist?.id ?: 0,
@@ -372,7 +457,22 @@ fun HomeScreen(
                                         onClick = { onChannelClick(matchedChannel) },
                                         onToggleFavorite = { onToggleFavorite(matchedChannel) },
                                         onOptionsClick = { onChannelOptions(matchedChannel) },
-                                        modifier = Modifier.width(220.dp)
+                                        onCategoryClick = { cat -> onSelectCategoryAndNavigate(cat) },
+                                        modifier = Modifier
+                                            .width(220.dp)
+                                            .then(
+                                                if (index == 0 && onNavigateToRail != null) {
+                                                    Modifier.onPreviewKeyEvent { keyEvent ->
+                                                        val native = keyEvent.nativeKeyEvent
+                                                        if (native.action == android.view.KeyEvent.ACTION_DOWN &&
+                                                            native.keyCode == android.view.KeyEvent.KEYCODE_DPAD_LEFT
+                                                        ) {
+                                                            onNavigateToRail()
+                                                            true
+                                                        } else false
+                                                    }
+                                                } else Modifier
+                                            )
                                     )
                                 }
                             }
@@ -420,11 +520,22 @@ fun HomeScreen(
                             LazyRow(
                                 horizontalArrangement = Arrangement.spacedBy(10.dp)
                             ) {
-                                items(nonAllLanguages) { lang ->
+                                itemsIndexed(nonAllLanguages) { index, lang ->
                                     TvCategoryChip(
                                         category = lang,
                                         isSelected = false,
-                                        onClick = { onSelectLanguageAndNavigate(lang) }
+                                        onClick = { onSelectLanguageAndNavigate(lang) },
+                                        modifier = if (index == 0 && onNavigateToRail != null) {
+                                            Modifier.onPreviewKeyEvent { keyEvent ->
+                                                val native = keyEvent.nativeKeyEvent
+                                                if (native.action == android.view.KeyEvent.ACTION_DOWN &&
+                                                    native.keyCode == android.view.KeyEvent.KEYCODE_DPAD_LEFT
+                                                ) {
+                                                    onNavigateToRail()
+                                                    true
+                                                } else false
+                                            }
+                                        } else Modifier
                                     )
                                 }
                             }
@@ -456,11 +567,22 @@ fun HomeScreen(
                             LazyRow(
                                 horizontalArrangement = Arrangement.spacedBy(10.dp)
                             ) {
-                                items(nonAllContentCategories) { cat ->
+                                itemsIndexed(nonAllContentCategories) { index, cat ->
                                     TvCategoryChip(
                                         category = cat,
                                         isSelected = false,
-                                        onClick = { onSelectCategoryAndNavigate(cat) }
+                                        onClick = { onSelectCategoryAndNavigate(cat) },
+                                        modifier = if (index == 0 && onNavigateToRail != null) {
+                                            Modifier.onPreviewKeyEvent { keyEvent ->
+                                                val native = keyEvent.nativeKeyEvent
+                                                if (native.action == android.view.KeyEvent.ACTION_DOWN &&
+                                                    native.keyCode == android.view.KeyEvent.KEYCODE_DPAD_LEFT
+                                                ) {
+                                                    onNavigateToRail()
+                                                    true
+                                                } else false
+                                            }
+                                        } else Modifier
                                     )
                                 }
                             }
@@ -495,20 +617,65 @@ fun HomeScreen(
                                 TvFocusableButton(
                                     text = "View All",
                                     onClick = onNavigateToFavorites,
-                                    tag = "btn_view_all_favorites"
+                                    tag = "btn_view_all_favorites",
+                                    modifier = Modifier
+                                        .focusRequester(viewAllFavoritesFocusRequester)
+                                        .onPreviewKeyEvent { keyEvent ->
+                                            val native = keyEvent.nativeKeyEvent
+                                            if (native.action == android.view.KeyEvent.ACTION_DOWN) {
+                                                when (native.keyCode) {
+                                                    android.view.KeyEvent.KEYCODE_DPAD_LEFT -> {
+                                                        onNavigateToRail?.invoke()
+                                                        true
+                                                    }
+                                                    else -> false
+                                                }
+                                            } else false
+                                        }
                                 )
                             }
                             Spacer(modifier = Modifier.height(10.dp))
                             LazyRow(
                                 horizontalArrangement = Arrangement.spacedBy(16.dp)
                             ) {
-                                items(favorites.take(15), key = { it.id }) { channel ->
+                                itemsIndexed(favorites.take(15), key = { _, channel -> channel.id }) { index, channel ->
                                     TvChannelCard(
                                         channel = channel,
                                         onClick = { onChannelClick(channel) },
                                         onToggleFavorite = { onToggleFavorite(channel) },
                                         onOptionsClick = { onChannelOptions(channel) },
-                                        modifier = Modifier.width(220.dp)
+                                        onCategoryClick = { cat -> onSelectCategoryAndNavigate(cat) },
+                                        modifier = Modifier
+                                            .width(220.dp)
+                                            .then(
+                                                if (index == 0) {
+                                                    Modifier.onPreviewKeyEvent { keyEvent ->
+                                                        val native = keyEvent.nativeKeyEvent
+                                                        if (native.action == android.view.KeyEvent.ACTION_DOWN) {
+                                                            when (native.keyCode) {
+                                                                android.view.KeyEvent.KEYCODE_DPAD_LEFT -> {
+                                                                    onNavigateToRail?.invoke()
+                                                                    true
+                                                                }
+                                                                android.view.KeyEvent.KEYCODE_DPAD_UP -> {
+                                                                    viewAllFavoritesFocusRequester.requestFocus()
+                                                                    true
+                                                                }
+                                                                else -> false
+                                                            }
+                                                        } else false
+                                                    }
+                                                } else Modifier
+                                            )
+                                    )
+                                }
+                                item {
+                                    com.example.ui.components.TvActionCard(
+                                        title = "View All",
+                                        subtitle = "${favorites.size} Favorites",
+                                        icon = Icons.Default.Star,
+                                        onClick = onNavigateToFavorites,
+                                        modifier = Modifier.width(180.dp)
                                     )
                                 }
                             }
@@ -539,23 +706,122 @@ fun HomeScreen(
                                 text = "View All Channels (${channels.size})",
                                 icon = Icons.Default.LiveTv,
                                 onClick = onNavigateToLiveTv,
-                                tag = "btn_view_all_channels"
+                                tag = "btn_view_all_channels",
+                                modifier = Modifier
+                                    .focusRequester(viewAllChannelsFocusRequester)
+                                    .onPreviewKeyEvent { keyEvent ->
+                                        val native = keyEvent.nativeKeyEvent
+                                        if (native.action == android.view.KeyEvent.ACTION_DOWN) {
+                                            when (native.keyCode) {
+                                                android.view.KeyEvent.KEYCODE_DPAD_LEFT -> {
+                                                    onNavigateToRail?.invoke()
+                                                    true
+                                                }
+                                                else -> false
+                                            }
+                                        } else false
+                                    }
                             )
                         }
 
-                        Spacer(modifier = Modifier.height(10.dp))
+                        Spacer(modifier = Modifier.height(12.dp))
 
-                        LazyRow(
-                            horizontalArrangement = Arrangement.spacedBy(16.dp)
-                        ) {
-                            items(channels.take(20), key = { it.id }) { channel ->
-                                TvChannelCard(
-                                    channel = channel,
-                                    onClick = { onChannelClick(channel) },
-                                    onToggleFavorite = { onToggleFavorite(channel) },
-                                    onOptionsClick = { onChannelOptions(channel) },
-                                    modifier = Modifier.width(220.dp)
-                                )
+                        if (isChannelsLoading) {
+                            LazyRow(
+                                horizontalArrangement = Arrangement.spacedBy(16.dp)
+                            ) {
+                                items(6) {
+                                    com.example.ui.components.TvChannelCardSkeleton(
+                                        modifier = Modifier.width(220.dp)
+                                    )
+                                }
+                            }
+                        } else if (channels.isNotEmpty()) {
+                            LazyRow(
+                                horizontalArrangement = Arrangement.spacedBy(16.dp)
+                            ) {
+                                itemsIndexed(channels.take(20), key = { _, channel -> channel.id }) { index, channel ->
+                                    TvChannelCard(
+                                        channel = channel,
+                                        onClick = { onChannelClick(channel) },
+                                        onToggleFavorite = { onToggleFavorite(channel) },
+                                        onOptionsClick = { onChannelOptions(channel) },
+                                        onCategoryClick = { cat -> onSelectCategoryAndNavigate(cat) },
+                                        modifier = Modifier
+                                            .width(220.dp)
+                                            .then(
+                                                if (index == 0) {
+                                                    Modifier.onPreviewKeyEvent { keyEvent ->
+                                                        val native = keyEvent.nativeKeyEvent
+                                                        if (native.action == android.view.KeyEvent.ACTION_DOWN) {
+                                                            when (native.keyCode) {
+                                                                android.view.KeyEvent.KEYCODE_DPAD_LEFT -> {
+                                                                    onNavigateToRail?.invoke()
+                                                                    true
+                                                                }
+                                                                android.view.KeyEvent.KEYCODE_DPAD_UP -> {
+                                                                    viewAllChannelsFocusRequester.requestFocus()
+                                                                    true
+                                                                }
+                                                                else -> false
+                                                            }
+                                                        } else false
+                                                    }
+                                                } else Modifier
+                                            )
+                                    )
+                                }
+                                item {
+                                    com.example.ui.components.TvActionCard(
+                                        title = "View All",
+                                        subtitle = "${channels.size} Channels",
+                                        icon = Icons.Default.LiveTv,
+                                        onClick = onNavigateToLiveTv,
+                                        modifier = Modifier.width(180.dp)
+                                    )
+                                }
+                            }
+                        } else {
+                            // Immediate fallback action if playlist has 0 channels
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(14.dp))
+                                    .background(Color(0xFF161A24))
+                                    .border(1.dp, Color(0x22FFFFFF), RoundedCornerShape(14.dp))
+                                    .padding(22.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .padding(end = 16.dp)
+                                    ) {
+                                        Text(
+                                            text = "Ready to start streaming?",
+                                            color = TvTextPrimary,
+                                            fontSize = 16.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                        Spacer(modifier = Modifier.height(4.dp))
+                                        Text(
+                                            text = "No channels loaded in this playlist. Tap below to immediately load open streaming demo channels.",
+                                            color = TvTextSecondary,
+                                            fontSize = 12.5.sp
+                                        )
+                                    }
+                                    TvFocusableButton(
+                                        text = "Load Verified Streams",
+                                        icon = Icons.Default.PlayArrow,
+                                        onClick = onLoadDemoChannels,
+                                        isPrimary = true,
+                                        tag = "btn_load_demo_channels"
+                                    )
+                                }
                             }
                         }
                     }
@@ -572,11 +838,27 @@ private fun HomeNavCard(
     icon: ImageVector,
     iconTint: Color,
     onClick: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onNavigateToRail: (() -> Unit)? = null
 ) {
     TvFocusableCard(
         onClick = onClick,
-        modifier = modifier.height(68.dp)
+        modifier = modifier
+            .height(72.dp)
+            .then(
+                if (onNavigateToRail != null) {
+                    Modifier.onPreviewKeyEvent { keyEvent ->
+                        val native = keyEvent.nativeKeyEvent
+                        if (native.action == android.view.KeyEvent.ACTION_DOWN &&
+                            native.keyCode == android.view.KeyEvent.KEYCODE_DPAD_LEFT
+                        ) {
+                            onNavigateToRail()
+                            true
+                        } else false
+                    }
+                } else Modifier
+            ),
+        shape = RoundedCornerShape(12.dp)
     ) { isFocused ->
         Row(
             modifier = Modifier
@@ -586,16 +868,17 @@ private fun HomeNavCard(
         ) {
             Box(
                 modifier = Modifier
-                    .size(38.dp)
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(iconTint.copy(alpha = 0.15f)),
+                    .size(42.dp)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(iconTint.copy(alpha = 0.18f))
+                    .border(1.dp, iconTint.copy(alpha = 0.4f), RoundedCornerShape(10.dp)),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
                     imageVector = icon,
                     contentDescription = null,
                     tint = iconTint,
-                    modifier = Modifier.size(20.dp)
+                    modifier = Modifier.size(22.dp)
                 )
             }
             Spacer(modifier = Modifier.width(12.dp))
@@ -603,14 +886,15 @@ private fun HomeNavCard(
                 Text(
                     text = title,
                     color = TvTextPrimary,
-                    fontSize = 13.5.sp,
+                    fontSize = 14.sp,
                     fontWeight = FontWeight.Bold,
                     maxLines = 1
                 )
+                Spacer(modifier = Modifier.height(2.dp))
                 Text(
                     text = count,
                     color = if (isFocused) TvPrimary else TvTextSecondary,
-                    fontSize = 11.sp,
+                    fontSize = 11.5.sp,
                     maxLines = 1
                 )
             }
@@ -622,86 +906,155 @@ private fun HomeNavCard(
 private fun HeroQuickWatchBanner(
     activePlaylist: Playlist?,
     channelCount: Int,
-    onNavigateToLiveTv: () -> Unit
+    onNavigateToLiveTv: () -> Unit,
+    focusRequester: FocusRequester? = null,
+    onNavigateToRail: (() -> Unit)? = null,
+    onNavigateUp: (() -> Unit)? = null
 ) {
     TvFocusableCard(
         onClick = onNavigateToLiveTv,
         modifier = Modifier
             .fillMaxWidth()
-            .heightIn(min = 120.dp)
-            .testTag("hero_quick_watch_banner")
-    ) { isFocused ->
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(20.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            Column(
-                modifier = Modifier
-                    .weight(1f)
-                    .padding(end = 16.dp)
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(6.dp))
-                            .background(TvPrimary.copy(alpha = 0.2f))
-                            .border(1.dp, TvPrimary, RoundedCornerShape(6.dp))
-                            .padding(horizontal = 8.dp, vertical = 2.dp)
-                    ) {
-                        Text(
-                            text = if (activePlaylist?.isDefault == true) "BUILT-IN TAMIL TV" else "LIVE TV GUIDE",
-                            color = TvPrimary,
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold
-                        )
+            .heightIn(min = 128.dp)
+            .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
+            .onPreviewKeyEvent { keyEvent ->
+                val native = keyEvent.nativeKeyEvent
+                if (native.action == android.view.KeyEvent.ACTION_DOWN) {
+                    when (native.keyCode) {
+                        android.view.KeyEvent.KEYCODE_DPAD_LEFT -> {
+                            if (onNavigateToRail != null) {
+                                onNavigateToRail()
+                                true
+                            } else false
+                        }
+                        android.view.KeyEvent.KEYCODE_DPAD_UP -> {
+                            if (onNavigateUp != null) {
+                                onNavigateUp()
+                                true
+                            } else false
+                        }
+                        else -> false
                     }
-                    Spacer(modifier = Modifier.width(10.dp))
+                } else false
+            }
+            .testTag("hero_quick_watch_banner"),
+        shape = RoundedCornerShape(16.dp),
+        focusedBorderColor = TvPrimary
+    ) { isFocused ->
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(
+                    Brush.horizontalGradient(
+                        if (isFocused) {
+                            listOf(Color(0xFF132B52), Color(0xFF1B3864), Color(0xFF22314A))
+                        } else {
+                            listOf(Color(0xFF0D1D36), Color(0xFF13233D), Color(0xFF1A1F2C))
+                        }
+                    )
+                )
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(22.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(end = 20.dp)
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(TvLiveRed.copy(alpha = 0.2f))
+                                .border(1.dp, TvLiveRed.copy(alpha = 0.6f), RoundedCornerShape(6.dp))
+                                .padding(horizontal = 8.dp, vertical = 3.dp)
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(5.dp)
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(6.dp)
+                                        .clip(CircleShape)
+                                        .background(TvLiveRed)
+                                )
+                                Text(
+                                    text = if (activePlaylist?.isDefault == true) "TAMIL LIVE TV" else "LIVE BROADCAST",
+                                    color = TvLiveRed,
+                                    fontSize = 10.5.sp,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    letterSpacing = 0.5.sp
+                                )
+                            }
+                        }
+
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(TvPrimary.copy(alpha = 0.2f))
+                                .border(1.dp, TvPrimary.copy(alpha = 0.5f), RoundedCornerShape(6.dp))
+                                .padding(horizontal = 8.dp, vertical = 3.dp)
+                        ) {
+                            Text(
+                                text = "$channelCount Channels Available",
+                                color = TvPrimary,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
                     Text(
-                        text = "$channelCount Channels Available",
+                        text = activePlaylist?.name ?: "StreamDeck Live TV",
+                        color = Color.White,
+                        fontSize = 22.sp,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+
+                    Spacer(modifier = Modifier.height(4.dp))
+
+                    Text(
+                        text = "Press Select to open the TV Guide, explore categories, and tune into live channels.",
                         color = TvTextSecondary,
-                        fontSize = 13.sp
+                        fontSize = 13.sp,
+                        lineHeight = 18.sp,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
 
-                Spacer(modifier = Modifier.height(6.dp))
-
-                Text(
-                    text = activePlaylist?.name ?: "StreamDeck Live TV",
-                    color = TvTextPrimary,
-                    fontSize = 20.sp,
-                    fontWeight = FontWeight.Bold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-
-                Spacer(modifier = Modifier.height(2.dp))
-
-                Text(
-                    text = "Press Select or Enter to open the full TV Guide with category filters and search.",
-                    color = TvTextSecondary,
-                    fontSize = 13.sp,
-                    lineHeight = 18.sp,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
-
-            Box(
-                modifier = Modifier
-                    .size(54.dp)
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(if (isFocused) TvPrimary else TvSurfaceVariant),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = Icons.Default.PlayArrow,
-                    contentDescription = "Watch",
-                    tint = if (isFocused) Color(0xFF0F172A) else TvTextPrimary,
-                    modifier = Modifier.size(32.dp)
-                )
+                Box(
+                    modifier = Modifier
+                        .size(56.dp)
+                        .clip(CircleShape)
+                        .background(if (isFocused) TvPrimary else Color(0xFF222B3D))
+                        .border(
+                            width = 2.dp,
+                            color = if (isFocused) Color.White else Color(0x33FFFFFF),
+                            shape = CircleShape
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.PlayArrow,
+                        contentDescription = "Watch",
+                        tint = if (isFocused) Color(0xFF071224) else Color.White,
+                        modifier = Modifier.size(32.dp)
+                    )
+                }
             }
         }
     }

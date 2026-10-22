@@ -14,7 +14,7 @@ fun ExitConfirmationDialog(
         message = "Are you sure you want to exit the application?",
         confirmText = "Exit App",
         cancelText = "Stay",
-        isDestructive = true,
+        isDestructive = false,
         icon = Icons.AutoMirrored.Filled.ExitToApp,
         onConfirm = onConfirmExit,
         onDismiss = onDismiss

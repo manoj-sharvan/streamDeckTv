@@ -17,7 +17,9 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.material.icons.Icons
@@ -34,6 +36,7 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -41,6 +44,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import kotlinx.coroutines.delay
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
@@ -73,7 +80,10 @@ fun PlaylistsScreen(
     onRenamePlaylist: (Long, String) -> Unit,
     onDeletePlaylist: (Long) -> Unit,
     onOpenAddPlaylist: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    listState: LazyListState = rememberSaveable(saver = LazyListState.Saver) { LazyListState() },
+    contentFocusRequester: androidx.compose.ui.focus.FocusRequester? = null,
+    onNavigateToRail: (() -> Unit)? = null
 ) {
     var playlistToRename by remember { mutableStateOf<Playlist?>(null) }
     var playlistToDelete by remember { mutableStateOf<Playlist?>(null) }
@@ -111,13 +121,29 @@ fun PlaylistsScreen(
                 icon = Icons.Default.Add,
                 onClick = onOpenAddPlaylist,
                 isPrimary = true,
-                tag = "btn_add_playlist_screen"
+                tag = "btn_add_playlist_screen",
+                modifier = Modifier
+                    .then(if (contentFocusRequester != null) Modifier.focusRequester(contentFocusRequester) else Modifier)
+                    .then(
+                        if (onNavigateToRail != null) {
+                            Modifier.onPreviewKeyEvent { keyEvent ->
+                                val native = keyEvent.nativeKeyEvent
+                                if (native.action == android.view.KeyEvent.ACTION_DOWN &&
+                                    native.keyCode == android.view.KeyEvent.KEYCODE_DPAD_LEFT
+                                ) {
+                                    onNavigateToRail()
+                                    true
+                                } else false
+                            }
+                        } else Modifier
+                    )
             )
         }
 
         Spacer(modifier = Modifier.height(16.dp))
 
         LazyColumn(
+            state = listState,
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(bottom = 32.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp)
@@ -133,7 +159,8 @@ fun PlaylistsScreen(
                     onSelect = { onSelectPlaylist(playlist.id) },
                     onRefresh = { onRefreshPlaylist(playlist.id) },
                     onRename = { playlistToRename = playlist },
-                    onDelete = { playlistToDelete = playlist }
+                    onDelete = { playlistToDelete = playlist },
+                    onNavigateToRail = onNavigateToRail
                 )
             }
         }
@@ -173,7 +200,8 @@ private fun PlaylistItemCard(
     onSelect: () -> Unit,
     onRefresh: () -> Unit,
     onRename: () -> Unit,
-    onDelete: () -> Unit
+    onDelete: () -> Unit,
+    onNavigateToRail: (() -> Unit)? = null
 ) {
     val dateFormat = remember { SimpleDateFormat("MMM d, HH:mm", Locale.getDefault()) }
     val refreshedDate = remember(playlist.lastRefreshed) {
@@ -261,6 +289,11 @@ private fun PlaylistItemCard(
                             )
                         }
                     }
+
+                    if (isRefreshing) {
+                        Spacer(modifier = Modifier.width(6.dp))
+                        com.example.ui.components.TvSyncPill(message = "Refreshing…")
+                    }
                 }
 
                 Spacer(modifier = Modifier.height(3.dp))
@@ -300,7 +333,18 @@ private fun PlaylistItemCard(
                     icon = Icons.Default.Check,
                     onClick = onSelect,
                     isPrimary = true,
-                    tag = "btn_select_${playlist.id}"
+                    tag = "btn_select_${playlist.id}",
+                    modifier = if (onNavigateToRail != null) {
+                        Modifier.onPreviewKeyEvent { keyEvent ->
+                            val native = keyEvent.nativeKeyEvent
+                            if (native.action == android.view.KeyEvent.ACTION_DOWN &&
+                                native.keyCode == android.view.KeyEvent.KEYCODE_DPAD_LEFT
+                            ) {
+                                onNavigateToRail()
+                                true
+                            } else false
+                        }
+                    } else Modifier
                 )
             }
 
@@ -308,7 +352,18 @@ private fun PlaylistItemCard(
                 text = if (isRefreshing) "Refreshing…" else "Refresh",
                 icon = Icons.Default.Refresh,
                 onClick = onRefresh,
-                tag = "btn_refresh_${playlist.id}"
+                tag = "btn_refresh_${playlist.id}",
+                modifier = if (isActive && onNavigateToRail != null) {
+                    Modifier.onPreviewKeyEvent { keyEvent ->
+                        val native = keyEvent.nativeKeyEvent
+                        if (native.action == android.view.KeyEvent.ACTION_DOWN &&
+                            native.keyCode == android.view.KeyEvent.KEYCODE_DPAD_LEFT
+                        ) {
+                            onNavigateToRail()
+                            true
+                        } else false
+                    }
+                } else Modifier
             )
 
             if (!playlist.isDefault) {
@@ -337,6 +392,14 @@ private fun RenamePlaylistDialog(
     onDismiss: () -> Unit
 ) {
     var newName by remember { mutableStateOf(playlist.name) }
+    val focusRequester = remember { FocusRequester() }
+
+    LaunchedEffect(Unit) {
+        delay(100)
+        try {
+            focusRequester.requestFocus()
+        } catch (_: Exception) {}
+    }
 
     Dialog(onDismissRequest = onDismiss) {
         Surface(
@@ -368,6 +431,7 @@ private fun RenamePlaylistDialog(
                     singleLine = true,
                     modifier = Modifier
                         .fillMaxWidth()
+                        .focusRequester(focusRequester)
                         .testTag("input_rename_playlist"),
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedTextColor = TvTextPrimary,
@@ -413,6 +477,14 @@ private fun DeletePlaylistDialog(
     onConfirm: () -> Unit,
     onDismiss: () -> Unit
 ) {
+    val cancelFocusRequester = remember { FocusRequester() }
+
+    LaunchedEffect(Unit) {
+        delay(100)
+        try {
+            cancelFocusRequester.requestFocus()
+        } catch (_: Exception) {}
+    }
     Dialog(onDismissRequest = onDismiss) {
         Surface(
             modifier = Modifier
@@ -452,6 +524,7 @@ private fun DeletePlaylistDialog(
                     TvFocusableButton(
                         text = "Cancel",
                         onClick = onDismiss,
+                        modifier = Modifier.focusRequester(cancelFocusRequester),
                         tag = "btn_delete_cancel"
                     )
 

@@ -27,10 +27,14 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.input.key.onPreviewKeyEvent
 import com.example.ui.components.TvFocusableButton
 import com.example.ui.components.TvFocusableCard
 import com.example.ui.theme.TvAccent
@@ -45,7 +49,9 @@ import com.example.ui.theme.TvTextSecondary
 @Composable
 fun LocalMediaScreen(
     onPlayLocalFile: (Uri, String) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    contentFocusRequester: FocusRequester? = null,
+    onNavigateToRail: (() -> Unit)? = null
 ) {
     // SAF Video picker launcher
     val videoPickerLauncher = rememberLauncherForActivityResult(
@@ -65,13 +71,13 @@ fun LocalMediaScreen(
             .testTag("local_media_screen")
     ) {
         Text(
-            text = "Offline & Local Media",
+            text = "My Videos",
             color = TvTextPrimary,
             fontSize = 24.sp,
             fontWeight = FontWeight.Bold
         )
         Text(
-            text = "Play local video files stored on your TV, USB flash drive, or internal storage completely offline.",
+            text = "Play videos saved on your TV or USB drive without an internet connection.",
             color = TvAccent,
             fontSize = 13.sp,
             modifier = Modifier.padding(top = 2.dp, bottom = 20.dp)
@@ -91,6 +97,20 @@ fun LocalMediaScreen(
                 modifier = Modifier
                     .weight(1f)
                     .height(240.dp)
+                    .then(if (contentFocusRequester != null) Modifier.focusRequester(contentFocusRequester) else Modifier)
+                    .then(
+                        if (onNavigateToRail != null) {
+                            Modifier.onPreviewKeyEvent { keyEvent ->
+                                val native = keyEvent.nativeKeyEvent
+                                if (native.action == android.view.KeyEvent.ACTION_DOWN &&
+                                    native.keyCode == android.view.KeyEvent.KEYCODE_DPAD_LEFT
+                                ) {
+                                    onNavigateToRail()
+                                    true
+                                } else false
+                            }
+                        } else Modifier
+                    )
                     .testTag("card_pick_local_video")
             ) { isFocused ->
                 Column(
@@ -110,7 +130,7 @@ fun LocalMediaScreen(
                         Icon(
                             imageVector = Icons.Default.VideoFile,
                             contentDescription = null,
-                            tint = if (isFocused) TvBackground else TvPrimary,
+                            tint = if (isFocused) Color.White else TvPrimary,
                             modifier = Modifier.size(36.dp)
                         )
                     }
@@ -118,7 +138,7 @@ fun LocalMediaScreen(
                     Spacer(modifier = Modifier.height(16.dp))
 
                     Text(
-                        text = "Open Local Video File",
+                        text = "Choose Video File",
                         color = TvTextPrimary,
                         fontSize = 18.sp,
                         fontWeight = FontWeight.Bold
@@ -127,7 +147,7 @@ fun LocalMediaScreen(
                     Spacer(modifier = Modifier.height(6.dp))
 
                     Text(
-                        text = "Browse USB drives or TV storage via Android Storage Access Framework",
+                        text = "Browse videos stored on your TV or connected USB drive",
                         color = TvTextSecondary,
                         fontSize = 12.sp,
                         textAlign = androidx.compose.ui.text.style.TextAlign.Center
@@ -140,9 +160,9 @@ fun LocalMediaScreen(
                 modifier = Modifier
                     .weight(1f)
                     .height(240.dp)
-                    .clip(RoundedCornerShape(12.dp))
+                    .clip(RoundedCornerShape(14.dp))
                     .background(TvSurface)
-                    .border(1.dp, TvSurfaceVariant, RoundedCornerShape(12.dp))
+                    .border(1.dp, TvSurfaceVariant, RoundedCornerShape(14.dp))
                     .padding(20.dp)
             ) {
                 Column(verticalArrangement = Arrangement.SpaceBetween) {
@@ -155,7 +175,7 @@ fun LocalMediaScreen(
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = "Supported Formats & Offline Notice",
+                            text = "Supported Formats",
                             color = TvTextPrimary,
                             fontSize = 15.sp,
                             fontWeight = FontWeight.Bold
@@ -165,10 +185,10 @@ fun LocalMediaScreen(
                     Spacer(modifier = Modifier.height(8.dp))
 
                     Text(
-                        text = "• Container formats: MP4, MKV, WebM, MPEG-TS, HLS (.m3u8)\n" +
-                               "• Video codecs: H.264 (AVC), H.265 (HEVC), VP9, AV1 (if TV hardware supports)\n" +
-                               "• Audio tracks: AAC, MP3, AC3, E-AC3, Opus\n" +
-                               "• Subtitles: SubRip (.srt), WebVTT (.vtt), embedded tracks",
+                        text = "• Videos: MP4, MKV, WebM, MPEG-TS, HLS (.m3u8)\n" +
+                               "• Codecs: H.264, H.265 (HEVC), VP9, AV1\n" +
+                               "• Audio: AAC, MP3, AC3, Dolby Digital, Opus\n" +
+                               "• Subtitles: SRT, WebVTT, and embedded tracks",
                         color = TvTextSecondary,
                         fontSize = 12.sp,
                         lineHeight = 18.sp
@@ -179,12 +199,12 @@ fun LocalMediaScreen(
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clip(RoundedCornerShape(6.dp))
+                            .clip(RoundedCornerShape(8.dp))
                             .background(TvSurfaceCard)
-                            .padding(8.dp)
+                            .padding(10.dp)
                     ) {
                         Text(
-                            text = "Notice: Live broadcast IPTV channels require an active internet connection. Channel metadata is cached locally for offline browsing.",
+                            text = "Tip: Offline playback works without internet. Live channels require a network connection.",
                             color = TvTextSecondary,
                             fontSize = 11.sp,
                             lineHeight = 14.sp

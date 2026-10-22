@@ -30,6 +30,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
@@ -59,6 +60,15 @@ fun ChannelActionDialog(
     onChangeLanguage: () -> Unit,
     onDismiss: () -> Unit
 ) {
+    val playFocusRequester = androidx.compose.runtime.remember { androidx.compose.ui.focus.FocusRequester() }
+
+    androidx.compose.runtime.LaunchedEffect(Unit) {
+        kotlinx.coroutines.delay(100)
+        try {
+            playFocusRequester.requestFocus()
+        } catch (_: Exception) {}
+    }
+
     Dialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false)
@@ -158,6 +168,7 @@ fun ChannelActionDialog(
                             onPlay()
                         },
                         isPrimary = true,
+                        modifier = Modifier.focusRequester(playFocusRequester),
                         tag = "dialog_btn_play"
                     )
 

@@ -6,8 +6,8 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.example.data.local.AppPreferences
 import com.example.data.parser.LanguageClassifier
+import com.example.domain.model.ImportStatus
 import com.example.data.repository.ChannelRepository
-import com.example.data.repository.ImportStatus
 import com.example.data.repository.PlaylistRepository
 import com.example.domain.model.Channel
 import com.example.domain.model.PlaybackHistory
@@ -22,11 +22,15 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+
+import com.example.domain.repository.IChannelRepository
+import com.example.domain.repository.IPlaylistRepository
 
 enum class NavTab {
     HOME,
@@ -39,10 +43,10 @@ enum class NavTab {
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class MainViewModel(
-    private val playlistRepository: PlaylistRepository,
-    private val channelRepository: ChannelRepository,
+    private val playlistRepository: IPlaylistRepository,
+    private val channelRepository: IChannelRepository,
     private val preferences: AppPreferences,
-    private val playerManager: StreamPlayerManager,
+    val playerManager: StreamPlayerManager,
     private val networkMonitor: NetworkMonitor
 ) : ViewModel() {
 
@@ -88,6 +92,15 @@ class MainViewModel(
 
     private val _showExitDialog = MutableStateFlow(false)
     val showExitDialog: StateFlow<Boolean> = _showExitDialog.asStateFlow()
+
+    private val _isAppInitializing = MutableStateFlow(true)
+    val isAppInitializing: StateFlow<Boolean> = _isAppInitializing.asStateFlow()
+
+    private val _isChannelsLoading = MutableStateFlow(false)
+    val isChannelsLoading: StateFlow<Boolean> = _isChannelsLoading.asStateFlow()
+
+    private val _startupStatusMessage = MutableStateFlow("Initializing StreamDeck TV…")
+    val startupStatusMessage: StateFlow<String> = _startupStatusMessage.asStateFlow()
 
     private val _showClearHistoryDialog = MutableStateFlow(false)
     val showClearHistoryDialog: StateFlow<Boolean> = _showClearHistoryDialog.asStateFlow()
@@ -165,35 +178,65 @@ class MainViewModel(
     val playerUiState: StateFlow<PlayerUiState> = playerManager.uiState
 
     init {
-        // Step 1: Ensure Tamil TV default playlist is loaded and cached on first start
+        // Step 1: Ensure initial playlist and channels are loaded
         viewModelScope.launch {
-            val savedId = preferences.activePlaylistId.firstOrNull()
-            val defaultResult = playlistRepository.ensureDefaultPlaylistLoaded(forceRefresh = false)
+            try {
+                _isAppInitializing.value = true
+                _startupStatusMessage.value = "Connecting to TV services…"
+                val savedId = preferences.activePlaylistId.firstOrNull()
 
-            if (savedId != null) {
-                _activePlaylistId.value = savedId
-            } else if (defaultResult is ImportStatus.Success) {
-                _activePlaylistId.value = defaultResult.playlist.id
-                preferences.setActivePlaylistId(defaultResult.playlist.id)
-            }
-        }
+                _startupStatusMessage.value = "Loading Tamil TV & IPTV channels…"
+                playlistRepository.ensureDefaultPlaylistLoaded(forceRefresh = false)
 
-        // Step 2: Observe saved active playlist from DataStore preferences
-        viewModelScope.launch {
-            preferences.activePlaylistId.collect { savedId ->
-                if (savedId != null) {
-                    _activePlaylistId.value = savedId
+                // Check if user has any active playlist with channels
+                val currentPlaylists = playlistRepository.allPlaylists.first()
+                val valid = currentPlaylists.firstOrNull { it.id == savedId && it.channelCount > 0 }
+                    ?: currentPlaylists.firstOrNull { it.channelCount > 0 }
+
+                if (valid != null) {
+                    _activePlaylistId.value = valid.id
+                    preferences.setActivePlaylistId(valid.id)
+                } else {
+                    _startupStatusMessage.value = "Setting up starter channels…"
+                    val demoResult = playlistRepository.loadDemoChannels()
+                    if (demoResult is ImportStatus.Success) {
+                        _activePlaylistId.value = demoResult.playlist.id
+                        preferences.setActivePlaylistId(demoResult.playlist.id)
+                    }
                 }
+            } catch (e: Exception) {
+                // Ensure startup loader never gets stuck even on network/IO issues
+            } finally {
+                _isAppInitializing.value = false
             }
         }
 
-        // Step 3: Fallback if activePlaylistId is not set
+        // Step 1b: Observe channels flow to automatically clear channels loading state
+        viewModelScope.launch {
+            channels.collect {
+                _isChannelsLoading.value = false
+            }
+        }
+
+        // Step 2: Observe playlists changes and ensure active playlist always has channels
         viewModelScope.launch {
             playlists.collect { list ->
-                if (_activePlaylistId.value == null && list.isNotEmpty()) {
-                    val defaultPl = list.firstOrNull { it.isDefault } ?: list.first()
-                    _activePlaylistId.value = defaultPl.id
-                    preferences.setActivePlaylistId(defaultPl.id)
+                if (list.isNotEmpty()) {
+                    val currentId = _activePlaylistId.value
+                    val currentActive = list.firstOrNull { it.id == currentId }
+                    if (currentActive == null || currentActive.channelCount == 0) {
+                        val withChannels = list.firstOrNull { it.channelCount > 0 }
+                        if (withChannels != null) {
+                            _activePlaylistId.value = withChannels.id
+                            preferences.setActivePlaylistId(withChannels.id)
+                        } else {
+                            val demoResult = playlistRepository.loadDemoChannels()
+                            if (demoResult is ImportStatus.Success) {
+                                _activePlaylistId.value = demoResult.playlist.id
+                                preferences.setActivePlaylistId(demoResult.playlist.id)
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -234,7 +277,7 @@ class MainViewModel(
         // 1. Dismiss any open confirmation / channel / playlist dialogs first
         if (_showExitDialog.value) {
             _showExitDialog.value = false
-            return true
+            return false // Close application!
         }
         if (_showAddPlaylistDialog.value) {
             dismissAddPlaylistDialog()
@@ -311,14 +354,17 @@ class MainViewModel(
     }
 
     fun selectPlaylist(playlistId: Long) {
-        _activePlaylistId.value = playlistId
-        _selectedCategory.value = "All"
-        _selectedLanguage.value = "All"
-        _selectedContentCategory.value = "All"
-        _searchQuery.value = ""
-        viewModelScope.launch {
-            preferences.setActivePlaylistId(playlistId)
-            playlistRepository.updateLastUsed(playlistId)
+        if (_activePlaylistId.value != playlistId) {
+            _isChannelsLoading.value = true
+            _activePlaylistId.value = playlistId
+            _selectedCategory.value = "All"
+            _selectedLanguage.value = "All"
+            _selectedContentCategory.value = "All"
+            _searchQuery.value = ""
+            viewModelScope.launch {
+                preferences.setActivePlaylistId(playlistId)
+                playlistRepository.updateLastUsed(playlistId)
+            }
         }
     }
 
@@ -410,10 +456,14 @@ class MainViewModel(
     fun refreshPlaylist(playlistId: Long) {
         viewModelScope.launch {
             _refreshingPlaylistId.value = playlistId
+            if (_activePlaylistId.value == playlistId) {
+                _isChannelsLoading.value = true
+            }
             _importStatus.value = ImportStatus.Loading("Refreshing playlist channels…")
             val result = playlistRepository.refreshPlaylist(playlistId)
             _importStatus.value = result
             _refreshingPlaylistId.value = null
+            _isChannelsLoading.value = false
         }
     }
 

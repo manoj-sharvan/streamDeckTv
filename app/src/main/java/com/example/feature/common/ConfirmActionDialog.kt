@@ -19,9 +19,13 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
@@ -47,6 +51,15 @@ fun ConfirmActionDialog(
     onConfirm: () -> Unit,
     onDismiss: () -> Unit
 ) {
+    val initialFocusRequester = remember { FocusRequester() }
+
+    LaunchedEffect(Unit) {
+        kotlinx.coroutines.delay(100)
+        try {
+            initialFocusRequester.requestFocus()
+        } catch (_: Exception) {}
+    }
+
     Dialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false)
@@ -104,6 +117,7 @@ fun ConfirmActionDialog(
                         text = cancelText,
                         icon = Icons.Default.Close,
                         onClick = onDismiss,
+                        modifier = if (isDestructive) Modifier.focusRequester(initialFocusRequester) else Modifier,
                         tag = "btn_dialog_cancel"
                     )
 
@@ -114,6 +128,7 @@ fun ConfirmActionDialog(
                         icon = Icons.Default.Check,
                         onClick = onConfirm,
                         isPrimary = true,
+                        modifier = if (!isDestructive) Modifier.focusRequester(initialFocusRequester) else Modifier,
                         tag = "btn_dialog_confirm"
                     )
                 }

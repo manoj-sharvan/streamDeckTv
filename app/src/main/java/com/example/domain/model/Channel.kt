@@ -1,5 +1,8 @@
 package com.example.domain.model
 
+import androidx.compose.runtime.Immutable
+
+@Immutable
 data class Channel(
     val id: Long = 0,
     val playlistId: Long,

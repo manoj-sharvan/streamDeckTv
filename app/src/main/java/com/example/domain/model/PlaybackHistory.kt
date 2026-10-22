@@ -1,5 +1,8 @@
 package com.example.domain.model
 
+import androidx.compose.runtime.Immutable
+
+@Immutable
 data class PlaybackHistory(
     val id: Long = 0,
     val channelId: Long,

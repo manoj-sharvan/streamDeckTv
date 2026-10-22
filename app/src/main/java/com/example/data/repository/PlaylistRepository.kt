@@ -15,22 +15,15 @@ import com.example.data.parser.ValidationResult
 import com.example.data.remote.DownloadResult
 import com.example.data.remote.PlaylistDownloader
 import com.example.domain.model.Playlist
+import com.example.domain.model.ImportStatus
+import com.example.domain.repository.IPlaylistRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
 import java.io.InputStream
 
-sealed class ImportStatus {
-    object Idle : ImportStatus()
-    data class Loading(val message: String) : ImportStatus()
-    data class Success(
-        val playlist: Playlist,
-        val count: Int,
-        val isExisting: Boolean = false
-    ) : ImportStatus()
-    data class Error(val error: String) : ImportStatus()
-}
+typealias ImportStatus = com.example.domain.model.ImportStatus
 
 class PlaylistRepository(
     private val context: Context,
@@ -38,41 +31,41 @@ class PlaylistRepository(
     private val channelDao: ChannelDao,
     private val downloader: PlaylistDownloader = PlaylistDownloader(),
     private val parser: M3uParser = M3uParser()
-) {
+) : IPlaylistRepository {
 
     companion object {
         const val DEFAULT_PLAYLIST_NAME = "Tamil TV"
         const val DEFAULT_PLAYLIST_URL = "https://iptv-org.github.io/iptv/languages/tam.m3u"
     }
 
-    val allPlaylists: Flow<List<Playlist>> = playlistDao.getAllPlaylists().map { list ->
+    override val allPlaylists: Flow<List<Playlist>> = playlistDao.getAllPlaylists().map { list ->
         list.map { it.toDomain() }
     }
 
-    suspend fun getPlaylistById(id: Long): Playlist? = withContext(Dispatchers.IO) {
+    override suspend fun getPlaylistById(id: Long): Playlist? = withContext(Dispatchers.IO) {
         playlistDao.getPlaylistById(id)?.toDomain()
     }
 
-    suspend fun getDefaultPlaylist(): Playlist? = withContext(Dispatchers.IO) {
+    override suspend fun getDefaultPlaylist(): Playlist? = withContext(Dispatchers.IO) {
         playlistDao.getDefaultPlaylist()?.toDomain()
     }
 
-    suspend fun getPlaylistCount(): Int = withContext(Dispatchers.IO) {
+    override suspend fun getPlaylistCount(): Int = withContext(Dispatchers.IO) {
         playlistDao.getPlaylistCount()
     }
 
-    suspend fun updateLastUsed(playlistId: Long) = withContext(Dispatchers.IO) {
+    override suspend fun updateLastUsed(playlistId: Long) = withContext(Dispatchers.IO) {
         playlistDao.updateLastUsed(playlistId, System.currentTimeMillis())
     }
 
-    suspend fun renamePlaylist(playlistId: Long, newName: String) = withContext(Dispatchers.IO) {
+    override suspend fun renamePlaylist(playlistId: Long, newName: String) = withContext(Dispatchers.IO) {
         val trimmed = newName.trim()
         if (trimmed.isNotBlank()) {
             playlistDao.renamePlaylist(playlistId, trimmed)
         }
     }
 
-    suspend fun deletePlaylist(playlistId: Long): Result<Unit> = withContext(Dispatchers.IO) {
+    override suspend fun deletePlaylist(playlistId: Long): Result<Unit> = withContext(Dispatchers.IO) {
         val entity = playlistDao.getPlaylistById(playlistId)
             ?: return@withContext Result.failure(IllegalArgumentException("Playlist not found"))
 
@@ -88,7 +81,7 @@ class PlaylistRepository(
     /**
      * Clears cached channels from local Room database without removing user playlists.
      */
-    suspend fun clearChannelCache(): Result<Unit> = withContext(Dispatchers.IO) {
+    override suspend fun clearChannelCache(): Result<Unit> = withContext(Dispatchers.IO) {
         try {
             channelDao.deleteAllCachedChannels()
             Result.success(Unit)
@@ -101,7 +94,7 @@ class PlaylistRepository(
      * Ensures the default Tamil TV playlist is loaded and cached.
      * If already cached and forceRefresh is false, it uses the local cache without network request.
      */
-    suspend fun ensureDefaultPlaylistLoaded(forceRefresh: Boolean = false): ImportStatus = withContext(Dispatchers.IO) {
+    override suspend fun ensureDefaultPlaylistLoaded(forceRefresh: Boolean): ImportStatus = withContext(Dispatchers.IO) {
         val existing = playlistDao.getDefaultPlaylist()
         if (existing != null) {
             val count = channelDao.getChannelCountByPlaylist(existing.id)
@@ -121,7 +114,8 @@ class PlaylistRepository(
                         return@withContext ImportStatus.Success(existing.toDomain(), count)
                     }
                 }
-                ImportStatus.Error("Could not fetch Tamil TV playlist: ${result.message}")
+                // Fallback to verified demo channels so app always has playable channels
+                loadDemoChannels()
             }
             is DownloadResult.Success -> {
                 try {
@@ -153,7 +147,7 @@ class PlaylistRepository(
         }
     }
 
-    suspend fun importFromUrl(url: String, customName: String? = null): ImportStatus = withContext(Dispatchers.IO) {
+    override suspend fun importFromUrl(url: String, customName: String?): ImportStatus = withContext(Dispatchers.IO) {
         val validation = PlaylistValidator.validateUrl(url)
         if (validation is ValidationResult.Invalid) {
             return@withContext ImportStatus.Error(validation.reason)
@@ -199,7 +193,7 @@ class PlaylistRepository(
         }
     }
 
-    suspend fun refreshPlaylist(playlistId: Long): ImportStatus = withContext(Dispatchers.IO) {
+    override suspend fun refreshPlaylist(playlistId: Long): ImportStatus = withContext(Dispatchers.IO) {
         val playlist = playlistDao.getPlaylistById(playlistId)
             ?: return@withContext ImportStatus.Error("Playlist not found.")
 
@@ -230,7 +224,7 @@ class PlaylistRepository(
         }
     }
 
-    suspend fun importFromUri(uri: Uri, customName: String? = null): ImportStatus = withContext(Dispatchers.IO) {
+    override suspend fun importFromUri(uri: Uri, customName: String?): ImportStatus = withContext(Dispatchers.IO) {
         try {
             val stream = context.contentResolver.openInputStream(uri)
                 ?: return@withContext ImportStatus.Error("Could not access file. Permission might be revoked.")
@@ -260,7 +254,7 @@ class PlaylistRepository(
         }
     }
 
-    suspend fun loadDemoChannels(): ImportStatus = withContext(Dispatchers.IO) {
+    override suspend fun loadDemoChannels(): ImportStatus = withContext(Dispatchers.IO) {
         try {
             val existing = playlistDao.getPlaylistByUri("demo://open-streams")
             if (existing != null) {

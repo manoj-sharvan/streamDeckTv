@@ -1,8 +1,6 @@
 package com.example.util
 
 import com.example.domain.model.Channel
-import java.text.Normalizer
-import java.util.Locale
 
 object SearchFilter {
 
@@ -12,49 +10,43 @@ object SearchFilter {
         selectedLanguage: String? = null,
         selectedCategory: String? = null
     ): List<Channel> {
-        val normalizedQuery = normalize(query)
+        val trimmedQuery = query.trim().lowercase()
+        val hasQuery = trimmedQuery.isNotEmpty()
+        val hasLang = !selectedLanguage.isNullOrBlank() && !selectedLanguage.equals("All", ignoreCase = true)
+        val hasCat = !selectedCategory.isNullOrBlank() && !selectedCategory.equals("All", ignoreCase = true)
+
+        if (!hasQuery && !hasLang && !hasCat) {
+            return channels
+        }
 
         return channels.filter { channel ->
             // 1. Language filter
-            val matchesLanguage = selectedLanguage.isNullOrBlank() ||
-                    selectedLanguage.equals("All", ignoreCase = true) ||
-                    channel.effectiveLanguage.equals(selectedLanguage, ignoreCase = true)
-
-            // 2. Content Category filter
-            val matchesCategory = selectedCategory.isNullOrBlank() ||
-                    selectedCategory.equals("All", ignoreCase = true) ||
-                    channel.contentCategory.equals(selectedCategory, ignoreCase = true) ||
-                    channel.groupTitle.equals(selectedCategory, ignoreCase = true)
-
-            // 3. Search query filter
-            val matchesQuery = if (normalizedQuery.isBlank()) {
-                true
-            } else {
-                val normalizedName = normalize(channel.name)
-                val normalizedGroup = normalize(channel.groupTitle)
-                val normalizedTvgId = normalize(channel.tvgId.orEmpty())
-                val normalizedLang = normalize(channel.effectiveLanguage)
-                val normalizedCat = normalize(channel.contentCategory)
-
-                normalizedName.contains(normalizedQuery) ||
-                        normalizedGroup.contains(normalizedQuery) ||
-                        normalizedTvgId.contains(normalizedQuery) ||
-                        normalizedLang.contains(normalizedQuery) ||
-                        normalizedCat.contains(normalizedQuery)
+            if (hasLang && !channel.effectiveLanguage.equals(selectedLanguage, ignoreCase = true)) {
+                return@filter false
             }
 
-            matchesLanguage && matchesCategory && matchesQuery
+            // 2. Content Category filter
+            if (hasCat &&
+                !channel.contentCategory.equals(selectedCategory, ignoreCase = true) &&
+                !channel.groupTitle.equals(selectedCategory, ignoreCase = true)
+            ) {
+                return@filter false
+            }
+
+            // 3. Fast search query filter
+            if (hasQuery) {
+                channel.name.contains(trimmedQuery, ignoreCase = true) ||
+                    channel.groupTitle.contains(trimmedQuery, ignoreCase = true) ||
+                    channel.effectiveLanguage.contains(trimmedQuery, ignoreCase = true) ||
+                    channel.contentCategory.contains(trimmedQuery, ignoreCase = true) ||
+                    (!channel.tvgId.isNullOrEmpty() && channel.tvgId.contains(trimmedQuery, ignoreCase = true))
+            } else {
+                true
+            }
         }
     }
 
-    /**
-     * Normalizes text by decomposing/recomposing into standard NFC Unicode format,
-     * stripping duplicate whitespaces, and converting to lower case.
-     * Accurately handles Tamil glyphs, combining diacritics, and regional characters.
-     */
-    fun normalize(input: String): String {
-        if (input.isBlank()) return ""
-        val nfc = Normalizer.normalize(input, Normalizer.Form.NFC)
-        return nfc.trim().replace(Regex("\\s+"), " ").lowercase(Locale.getDefault())
+    fun normalize(text: String): String {
+        return text.trim().lowercase().replace(Regex("\\s+"), " ")
     }
 }
