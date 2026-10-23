@@ -28,6 +28,7 @@ import androidx.compose.material.icons.filled.Gavel
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.SettingsRemote
+import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -68,6 +69,7 @@ fun SettingsScreen(
     onAddPlaylistClick: () -> Unit,
     onClearPlaybackHistoryClick: () -> Unit,
     onClearCacheClick: () -> Unit,
+    onOpenStorageDialog: () -> Unit = {},
     modifier: Modifier = Modifier,
     listState: LazyListState = rememberSaveable(saver = LazyListState.Saver) { LazyListState() },
     contentFocusRequester: FocusRequester? = null,
@@ -328,10 +330,11 @@ fun SettingsScreen(
                     horizontalArrangement = Arrangement.spacedBy(14.dp)
                 ) {
                     TvFocusableButton(
-                        text = "Clear Watch History",
-                        icon = Icons.Default.History,
-                        onClick = onClearPlaybackHistoryClick,
-                        tag = "btn_settings_clear_history",
+                        text = "Storage & Cache Monitor",
+                        icon = Icons.Default.Storage,
+                        onClick = onOpenStorageDialog,
+                        isPrimary = true,
+                        tag = "btn_settings_storage_dashboard",
                         modifier = if (onNavigateToRail != null) {
                             Modifier.onPreviewKeyEvent { keyEvent ->
                                 val native = keyEvent.nativeKeyEvent
@@ -343,6 +346,13 @@ fun SettingsScreen(
                                 } else false
                             }
                         } else Modifier
+                    )
+
+                    TvFocusableButton(
+                        text = "Clear Watch History",
+                        icon = Icons.Default.History,
+                        onClick = onClearPlaybackHistoryClick,
+                        tag = "btn_settings_clear_history"
                     )
 
                     TvFocusableButton(

@@ -1,5 +1,6 @@
 package com.example.feature.live
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -14,21 +15,17 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.itemsIndexed
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.filled.LiveTv
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -45,16 +42,23 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.platform.LocalFocusManager
-import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.domain.model.Channel
+import com.example.domain.model.PlaybackHistory
 import com.example.ui.components.TvCategoryChip
 import com.example.ui.components.TvChannelCard
+import com.example.ui.components.TvChannelCardSkeleton
+import com.example.ui.components.TvChannelInfoPanel
+import com.example.ui.components.TvEmptyState
+import com.example.ui.components.TvFocusableIconButton
 import com.example.ui.components.tvVerticalScrollbar
 import com.example.ui.theme.TvAccent
 import com.example.ui.theme.TvBackground
@@ -64,7 +68,26 @@ import com.example.ui.theme.TvSurfaceVariant
 import com.example.ui.theme.TvTextPrimary
 import com.example.ui.theme.TvTextSecondary
 import com.example.util.SearchFilter
+import kotlinx.coroutines.delay
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
+/**
+ * Premium Live TV Screen matching StreamDeck TV Wireframe (Panels 2, 3, 4, 7).
+ *
+ * TV Navigation & UX Features:
+ * - Direct Channel Selection: Clicking/Pressing OK on any channel card immediately starts playback.
+ * - Unified 2D Grid: Uses LazyVerticalGrid for smooth, native D-pad 4-directional navigation & continuous scrolling.
+ * - Remote Navigation Flow:
+ *     Rail -> DPAD_RIGHT -> Category Chips -> DPAD_DOWN -> First Channel Card
+ *     Grid -> DPAD_UP at top row -> Category Chips
+ *     Grid -> DPAD_LEFT at index 0 / col 0 -> Navigation Rail
+ * - Category Chips Bar: "All", "Tamil", "Sports", "News", "Entertainment", etc.
+ * - Header: Live TV title, live channel counter badge, digital clock (hh:mm a), and expandable Search.
+ * - Long Press / Options: Opens Channel Details Info Panel (Wireframe Panel 4) with preview, metadata, and actions.
+ * - Remote Back Key: Closes Info Panel when open before navigating away.
+ */
 @Composable
 fun LiveTvScreen(
     channels: List<Channel>,
@@ -84,9 +107,54 @@ fun LiveTvScreen(
     isChannelsLoading: Boolean = false,
     gridState: LazyGridState = rememberSaveable(saver = LazyGridState.Saver) { LazyGridState() },
     contentFocusRequester: FocusRequester? = null,
-    onNavigateToRail: (() -> Unit)? = null
+    onNavigateToRail: (() -> Unit)? = null,
+    recentChannels: List<PlaybackHistory> = emptyList(),
+    playingChannelId: Long? = null
 ) {
-    // Unicode-aware case-insensitive multi-field search and category filtering
+    var currentTimeString by remember { mutableStateOf("") }
+    var selectedChannelForDetails by remember { mutableStateOf<Channel?>(null) }
+    var isSearchExpanded by remember { mutableStateOf(false) }
+
+    val searchFocusRequester = remember { FocusRequester() }
+    val firstCategoryFocusRequester = contentFocusRequester ?: remember { FocusRequester() }
+    val firstChannelFocusRequester = remember { FocusRequester() }
+
+    // Remote Back Handler: Closes Channel Details Overlay if active
+    if (selectedChannelForDetails != null) {
+        BackHandler {
+            selectedChannelForDetails = null
+        }
+    }
+
+    // Ensure initial or restored focus lands on the first channel card or category chip
+    LaunchedEffect(Unit) {
+        for (attemptDelay in listOf(80L, 180L, 300L)) {
+            delay(attemptDelay)
+            val success = try {
+                firstChannelFocusRequester.requestFocus()
+                true
+            } catch (_: Exception) {
+                try {
+                    firstCategoryFocusRequester.requestFocus()
+                    true
+                } catch (_: Exception) {
+                    false
+                }
+            }
+            if (success) break
+        }
+    }
+
+    // Live Clock updater (HH:mm a)
+    LaunchedEffect(Unit) {
+        val formatter = SimpleDateFormat("hh:mm a", Locale.getDefault())
+        while (true) {
+            currentTimeString = formatter.format(Date())
+            delay(10_000)
+        }
+    }
+
+    // Filter channels based on search and selected categories
     val filteredChannels = remember(channels, selectedLanguage, selectedContentCategory, searchQuery) {
         SearchFilter.filter(
             channels = channels,
@@ -96,48 +164,122 @@ fun LiveTvScreen(
         )
     }
 
-    val searchFocusRequester = remember { FocusRequester() }
-    val firstChannelFocusRequester = remember { FocusRequester() }
-    val focusManager = LocalFocusManager.current
-
-    // Only scroll to top when user explicitly changes filters or search query, preserving last scroll when returning from player
-    var previousFilterKey by rememberSaveable { mutableStateOf<String?>(null) }
-    val currentFilterKey = "$searchQuery|$selectedContentCategory|$selectedLanguage"
-
-    LaunchedEffect(currentFilterKey) {
-        if (previousFilterKey != null && previousFilterKey != currentFilterKey) {
-            gridState.scrollToItem(0)
+    // Combine Languages and Categories into unified category chips list (Wireframe Panel 2)
+    val unifiedChips = remember(languages, contentCategories) {
+        val list = mutableListOf("All")
+        // Add content categories first (e.g. Entertainment, Sports, News, Movies)
+        contentCategories.filter { it != "All" && it.isNotBlank() }.forEach {
+            if (!list.contains(it)) list.add(it)
         }
-        previousFilterKey = currentFilterKey
+        // Add languages (e.g. Tamil, English, Hindi)
+        languages.filter { it != "All" && it.isNotBlank() }.forEach {
+            if (!list.contains(it)) list.add(it)
+        }
+        list
     }
 
-    Column(
+    // Group channels into sections for clear visual categorization in the grid
+    val channelSections = remember(filteredChannels, recentChannels, channels, selectedContentCategory, selectedLanguage, searchQuery) {
+        val sections = mutableListOf<Pair<String, List<Channel>>>()
+
+        // 1. Recently Watched section if no active search or subcategory filter
+        if (searchQuery.isBlank() && selectedContentCategory == null && selectedLanguage == null && recentChannels.isNotEmpty()) {
+            val channelsMap = channels.associateBy { it.id }
+            val recentList = recentChannels.mapNotNull { history ->
+                channelsMap[history.channelId] ?: channels.firstOrNull { it.streamUrl == history.streamUrl }
+            }.distinctBy { it.id }
+            if (recentList.isNotEmpty()) {
+                sections.add("Recently Watched" to recentList)
+            }
+        }
+
+        if (searchQuery.isNotBlank()) {
+            sections.add("Search Results (\"$searchQuery\")" to filteredChannels)
+        } else if (selectedContentCategory != null && selectedContentCategory != "All") {
+            sections.add(selectedContentCategory to filteredChannels)
+        } else if (selectedLanguage != null && selectedLanguage != "All") {
+            val grouped = filteredChannels.groupBy {
+                if (it.contentCategory.isNotBlank()) it.contentCategory else "General"
+            }
+            grouped.forEach { (category, list) ->
+                if (list.isNotEmpty()) sections.add(category to list)
+            }
+        } else {
+            // "All" selected: Group by content category or language
+            val grouped = filteredChannels.groupBy {
+                when {
+                    it.contentCategory.isNotBlank() -> it.contentCategory
+                    it.effectiveLanguage.isNotBlank() -> it.effectiveLanguage.uppercase()
+                    else -> "Entertainment"
+                }
+            }
+            val sortedKeys = grouped.keys.sortedWith(
+                compareByDescending<String> { it.equals("Entertainment", ignoreCase = true) }
+                    .thenByDescending { it.equals("Tamil", ignoreCase = true) }
+                    .thenByDescending { it.equals("Sports", ignoreCase = true) }
+                    .thenByDescending { it.equals("News", ignoreCase = true) }
+                    .thenByDescending { it.equals("Movies", ignoreCase = true) }
+            )
+            sortedKeys.forEach { key ->
+                grouped[key]?.let { list ->
+                    if (list.isNotEmpty()) {
+                        sections.add(key to list)
+                    }
+                }
+            }
+        }
+        sections
+    }
+
+    Box(
         modifier = modifier
             .fillMaxSize()
             .background(TvBackground)
-            .padding(top = 18.dp, start = 24.dp, end = 24.dp)
             .testTag("live_tv_screen")
     ) {
-        // Top Header & Search bar
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(top = 18.dp, start = 24.dp, end = 24.dp)
         ) {
-            Column(
-                modifier = Modifier
-                    .weight(1f, fill = false)
-                    .padding(end = 16.dp)
+            // Top Header: "Live TV" + Channel Count Badge on left, Search & Clock on right
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        text = "Live Television",
-                        color = TvTextPrimary,
-                        fontSize = 22.sp,
-                        fontWeight = FontWeight.Bold,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
+                    Icon(
+                        imageVector = Icons.Default.LiveTv,
+                        contentDescription = null,
+                        tint = TvPrimary,
+                        modifier = Modifier.size(28.dp)
                     )
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Text(
+                        text = "Live TV",
+                        color = TvTextPrimary,
+                        fontSize = 24.sp,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 0.4.sp
+                    )
+
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(TvPrimary.copy(alpha = 0.18f))
+                            .border(1.dp, TvPrimary.copy(alpha = 0.45f), RoundedCornerShape(6.dp))
+                            .padding(horizontal = 8.dp, vertical = 3.dp)
+                    ) {
+                        Text(
+                            text = "${filteredChannels.size} Channels",
+                            color = TvPrimary,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+
                     if (!isOnline) {
                         Spacer(modifier = Modifier.width(10.dp))
                         Box(
@@ -156,142 +298,145 @@ fun LiveTvScreen(
                         }
                     }
                 }
-                Text(
-                    text = "${filteredChannels.size} channels found",
-                    color = TvAccent,
-                    fontSize = 13.sp,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
 
-            // TV search input
-            OutlinedTextField(
-                value = searchQuery,
-                onValueChange = onSearchQueryChange,
-                placeholder = { Text("Search name, language, category…", fontSize = 13.sp) },
-                singleLine = true,
-                leadingIcon = {
-                    Icon(
-                        imageVector = Icons.Default.Search,
-                        contentDescription = "Search",
-                        tint = TvTextSecondary,
-                        modifier = Modifier.size(18.dp)
-                    )
-                },
-                trailingIcon = {
-                    if (searchQuery.isNotEmpty()) {
-                        IconButton(onClick = { onSearchQueryChange("") }) {
-                            Icon(
-                                imageVector = Icons.Default.Clear,
-                                contentDescription = "Clear search",
-                                tint = TvTextSecondary,
-                                modifier = Modifier.size(18.dp)
-                            )
-                        }
-                    }
-                },
-                modifier = Modifier
-                    .widthIn(min = 220.dp, max = 360.dp)
-                    .height(50.dp)
-                    .focusRequester(searchFocusRequester)
-                    .onPreviewKeyEvent { keyEvent ->
-                        val native = keyEvent.nativeKeyEvent
-                        if (native.action == android.view.KeyEvent.ACTION_DOWN) {
-                            when (native.keyCode) {
-                                android.view.KeyEvent.KEYCODE_DPAD_DOWN -> {
-                                    contentFocusRequester?.requestFocus()
-                                    true
-                                }
-                                android.view.KeyEvent.KEYCODE_DPAD_LEFT -> {
-                                    onNavigateToRail?.invoke()
-                                    true
-                                }
-                                else -> false
-                            }
-                        } else false
-                    }
-                    .testTag("live_tv_search_input"),
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedTextColor = TvTextPrimary,
-                    unfocusedTextColor = TvTextPrimary,
-                    focusedBorderColor = TvPrimary,
-                    unfocusedBorderColor = TvSurfaceVariant
-                )
-            )
-        }
-
-        Spacer(modifier = Modifier.height(12.dp))
-
-        // Row 1: Languages Horizontal Bar
-        if (languages.size > 1) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    text = "Language:",
-                    color = TvTextSecondary,
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier.padding(end = 8.dp)
-                )
-                LazyRow(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    contentPadding = PaddingValues(vertical = 2.dp)
+                // Right controls: Search box + Clock
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
-                    itemsIndexed(languages) { index, lang ->
-                        val isSelected = (selectedLanguage ?: "All").equals(lang, ignoreCase = true)
-                        TvCategoryChip(
-                            category = lang,
-                            isSelected = isSelected,
-                            onClick = { onLanguageSelect(lang) },
+                    if (isSearchExpanded || searchQuery.isNotEmpty()) {
+                        OutlinedTextField(
+                            value = searchQuery,
+                            onValueChange = onSearchQueryChange,
+                            placeholder = { Text("Search channels…", fontSize = 12.sp) },
+                            singleLine = true,
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = Icons.Default.Search,
+                                    contentDescription = null,
+                                    tint = TvTextSecondary,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            },
+                            trailingIcon = {
+                                IconButton(onClick = {
+                                    onSearchQueryChange("")
+                                    isSearchExpanded = false
+                                }) {
+                                    Icon(
+                                        imageVector = Icons.Default.Clear,
+                                        contentDescription = "Close Search",
+                                        tint = TvTextSecondary,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                }
+                            },
                             modifier = Modifier
-                                .then(if (index == 0 && contentFocusRequester != null) Modifier.focusRequester(contentFocusRequester) else Modifier)
+                                .width(240.dp)
+                                .height(46.dp)
+                                .focusRequester(searchFocusRequester)
                                 .onPreviewKeyEvent { keyEvent ->
                                     val native = keyEvent.nativeKeyEvent
                                     if (native.action == android.view.KeyEvent.ACTION_DOWN) {
                                         when (native.keyCode) {
-                                            android.view.KeyEvent.KEYCODE_DPAD_LEFT -> {
-                                                if (index == 0 && onNavigateToRail != null) {
-                                                    onNavigateToRail()
-                                                    true
-                                                } else false
+                                            android.view.KeyEvent.KEYCODE_DPAD_DOWN -> {
+                                                try {
+                                                    firstCategoryFocusRequester.requestFocus()
+                                                } catch (_: Exception) {}
+                                                true
                                             }
-                                            android.view.KeyEvent.KEYCODE_DPAD_UP -> {
-                                                searchFocusRequester.requestFocus()
+                                            android.view.KeyEvent.KEYCODE_DPAD_LEFT -> {
+                                                onNavigateToRail?.invoke()
                                                 true
                                             }
                                             else -> false
                                         }
                                     } else false
-                                }
+                                },
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedTextColor = TvTextPrimary,
+                                unfocusedTextColor = TvTextPrimary,
+                                focusedBorderColor = TvPrimary,
+                                unfocusedBorderColor = TvSurfaceVariant
+                            )
+                        )
+                    } else {
+                        TvFocusableIconButton(
+                            icon = Icons.Default.Search,
+                            contentDescription = "Search",
+                            onClick = {
+                                isSearchExpanded = true
+                                searchFocusRequester.requestFocus()
+                            },
+                            modifier = Modifier.onPreviewKeyEvent { keyEvent ->
+                                val native = keyEvent.nativeKeyEvent
+                                if (native.action == android.view.KeyEvent.ACTION_DOWN) {
+                                    when (native.keyCode) {
+                                        android.view.KeyEvent.KEYCODE_DPAD_DOWN -> {
+                                            try {
+                                                firstCategoryFocusRequester.requestFocus()
+                                            } catch (_: Exception) {}
+                                            true
+                                        }
+                                        android.view.KeyEvent.KEYCODE_DPAD_LEFT -> {
+                                            onNavigateToRail?.invoke()
+                                            true
+                                        }
+                                        else -> false
+                                    }
+                                } else false
+                            }
+                        )
+                    }
+
+                    // Digital Clock (Wireframe Panel 2)
+                    if (currentTimeString.isNotBlank()) {
+                        Text(
+                            text = currentTimeString,
+                            color = TvTextSecondary,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Medium
                         )
                     }
                 }
             }
-        }
 
-        Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(14.dp))
 
-        // Row 2: Content Categories Horizontal Bar
-        if (contentCategories.size > 1) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    text = "Category:",
-                    color = TvTextSecondary,
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier.padding(end = 8.dp)
-                )
-                LazyRow(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    contentPadding = PaddingValues(vertical = 2.dp)
-                ) {
-                    itemsIndexed(contentCategories) { index, category ->
-                        val isSelected = (selectedContentCategory ?: "All").equals(category, ignoreCase = true)
-                        TvCategoryChip(
-                            category = category,
-                            isSelected = isSelected,
-                            onClick = { onContentCategorySelect(category) },
-                            modifier = Modifier.onPreviewKeyEvent { keyEvent ->
+            // Horizontal Category Chips Bar (Wireframe Panel 2)
+            LazyRow(
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                contentPadding = PaddingValues(vertical = 4.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                itemsIndexed(unifiedChips) { index, chipName ->
+                    val isSelected = when {
+                        chipName == "All" -> (selectedContentCategory == null || selectedContentCategory == "All") && (selectedLanguage == null || selectedLanguage == "All")
+                        contentCategories.contains(chipName) -> selectedContentCategory.equals(chipName, ignoreCase = true)
+                        languages.contains(chipName) -> selectedLanguage.equals(chipName, ignoreCase = true)
+                        else -> false
+                    }
+
+                    TvCategoryChip(
+                        category = chipName,
+                        isSelected = isSelected,
+                        onClick = {
+                            when {
+                                chipName == "All" -> {
+                                    onContentCategorySelect(null)
+                                    onLanguageSelect(null)
+                                }
+                                contentCategories.contains(chipName) -> {
+                                    onContentCategorySelect(chipName)
+                                }
+                                languages.contains(chipName) -> {
+                                    onLanguageSelect(chipName)
+                                }
+                            }
+                        },
+                        modifier = Modifier
+                            .then(if (index == 0) Modifier.focusRequester(firstCategoryFocusRequester) else Modifier)
+                            .onPreviewKeyEvent { keyEvent ->
                                 val native = keyEvent.nativeKeyEvent
                                 if (native.action == android.view.KeyEvent.ACTION_DOWN) {
                                     when (native.keyCode) {
@@ -302,96 +447,162 @@ fun LiveTvScreen(
                                             } else false
                                         }
                                         android.view.KeyEvent.KEYCODE_DPAD_DOWN -> {
-                                            focusManager.moveFocus(FocusDirection.Down)
+                                            // Move directly from Category Chips down to the Channel Grid
+                                            try {
+                                                firstChannelFocusRequester.requestFocus()
+                                            } catch (_: Exception) {}
+                                            true
+                                        }
+                                        android.view.KeyEvent.KEYCODE_DPAD_UP -> {
+                                            try {
+                                                searchFocusRequester.requestFocus()
+                                            } catch (_: Exception) {}
+                                            true
                                         }
                                         else -> false
                                     }
                                 } else false
                             }
-                        )
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(14.dp))
+
+            // Content Area: Unified 2D Channel Grid with smooth D-pad scrolling
+            if (isChannelsLoading) {
+                LazyVerticalGrid(
+                    columns = GridCells.Adaptive(minSize = 190.dp),
+                    horizontalArrangement = Arrangement.spacedBy(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(14.dp),
+                    contentPadding = PaddingValues(bottom = 32.dp),
+                    modifier = Modifier.fillMaxSize()
+                ) {
+                    items(12) {
+                        TvChannelCardSkeleton(modifier = Modifier.fillMaxWidth())
+                    }
+                }
+            } else if (filteredChannels.isEmpty()) {
+                TvEmptyState(
+                    title = if (searchQuery.isNotBlank()) "No channels match \"$searchQuery\"" else "No channels found",
+                    subtitle = "Try selecting \"All\" or another category",
+                    actionLabel = "Show All Channels",
+                    onAction = {
+                        onSearchQueryChange("")
+                        onContentCategorySelect(null)
+                        onLanguageSelect(null)
+                    }
+                )
+            } else {
+                LazyVerticalGrid(
+                    state = gridState,
+                    columns = GridCells.Adaptive(minSize = 190.dp),
+                    horizontalArrangement = Arrangement.spacedBy(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(14.dp),
+                    contentPadding = PaddingValues(bottom = 36.dp),
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .tvVerticalScrollbar(gridState)
+                ) {
+                    var globalCardIndex = 0
+
+                    channelSections.forEachIndexed { sectionIndex, (sectionTitle, sectionChannels) ->
+                        // Full-width section header if multiple categories exist
+                        if (channelSections.size > 1) {
+                            item(
+                                span = { GridItemSpan(maxLineSpan) },
+                                key = "section_header_$sectionTitle"
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(top = if (sectionIndex > 0) 14.dp else 4.dp, bottom = 4.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = sectionTitle,
+                                        color = TvTextPrimary,
+                                        fontSize = 17.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    Text(
+                                        text = "${sectionChannels.size} channels",
+                                        color = TvTextSecondary,
+                                        fontSize = 12.sp
+                                    )
+                                }
+                            }
+                        }
+
+                        itemsIndexed(
+                            items = sectionChannels,
+                            key = { _, channel -> "${sectionTitle}_${channel.id}" }
+                        ) { indexInSection, channel ->
+                            val currentCardIndex = globalCardIndex++
+                            val isFirstCard = currentCardIndex == 0
+                            val isTopRow = sectionIndex == 0 && indexInSection < 5
+
+                            TvChannelCard(
+                                channel = channel,
+                                onClick = {
+                                    // DIRECT PLAYBACK: Immediately play the channel on TV selection
+                                    onChannelClick(channel)
+                                },
+                                onToggleFavorite = { onToggleFavorite(channel) },
+                                onOptionsClick = {
+                                    // LONG PRESS / OPTIONS: Open Channel Details Info Panel
+                                    selectedChannelForDetails = channel
+                                },
+                                isSelected = playingChannelId == channel.id,
+                                isPlaying = playingChannelId == channel.id,
+                                focusRequester = if (isFirstCard) firstChannelFocusRequester else null,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .onPreviewKeyEvent { keyEvent ->
+                                        val native = keyEvent.nativeKeyEvent
+                                        if (native.action == android.view.KeyEvent.ACTION_DOWN) {
+                                            when (native.keyCode) {
+                                                android.view.KeyEvent.KEYCODE_DPAD_LEFT -> {
+                                                    // Move back to navigation rail from leftmost items or first card
+                                                    if (isFirstCard && onNavigateToRail != null) {
+                                                        onNavigateToRail()
+                                                        true
+                                                    } else false
+                                                }
+                                                android.view.KeyEvent.KEYCODE_DPAD_UP -> {
+                                                    // Move back up to category chips from top row
+                                                    if (isTopRow) {
+                                                        try {
+                                                            firstCategoryFocusRequester.requestFocus()
+                                                        } catch (_: Exception) {}
+                                                        true
+                                                    } else false
+                                                }
+                                                else -> false
+                                            }
+                                        } else false
+                                    }
+                            )
+                        }
                     }
                 }
             }
         }
 
-        Spacer(modifier = Modifier.height(14.dp))
-
-        if (isChannelsLoading) {
-            LazyVerticalGrid(
-                state = gridState,
-                columns = GridCells.Adaptive(minSize = 210.dp),
-                horizontalArrangement = Arrangement.spacedBy(16.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp),
-                contentPadding = PaddingValues(bottom = 32.dp),
-                modifier = Modifier.fillMaxSize()
-            ) {
-                items(12) {
-                    com.example.ui.components.TvChannelCardSkeleton(modifier = Modifier.fillMaxWidth())
-                }
-            }
-        } else if (filteredChannels.isEmpty()) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(bottom = 60.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(
-                        text = "No Channels Found",
-                        color = TvTextPrimary,
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Spacer(modifier = Modifier.height(6.dp))
-                    Text(
-                        text = if (searchQuery.isNotBlank()) {
-                            "No channels match \"$searchQuery\" in selected filters"
-                        } else {
-                            "No channels found for the selected language and category"
-                        },
-                        color = TvTextSecondary,
-                        fontSize = 14.sp
-                    )
-                }
-            }
-        } else {
-            LazyVerticalGrid(
-                state = gridState,
-                columns = GridCells.Adaptive(minSize = 210.dp),
-                horizontalArrangement = Arrangement.spacedBy(16.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp),
-                contentPadding = PaddingValues(bottom = 32.dp),
-                modifier = Modifier
-                    .fillMaxSize()
-                    .tvVerticalScrollbar(gridState)
-            ) {
-                itemsIndexed(filteredChannels, key = { _, it -> it.id }) { index, channel ->
-                    TvChannelCard(
-                        channel = channel,
-                        onClick = { onChannelClick(channel) },
-                        onToggleFavorite = { onToggleFavorite(channel) },
-                        onOptionsClick = { onChannelOptions(channel) },
-                        onCategoryClick = { cat -> onContentCategorySelect(cat) },
-                        focusRequester = if (index == 0) firstChannelFocusRequester else null,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .then(
-                                if (index == 0 && onNavigateToRail != null) {
-                                    Modifier.onPreviewKeyEvent { keyEvent ->
-                                        val native = keyEvent.nativeKeyEvent
-                                        if (native.action == android.view.KeyEvent.ACTION_DOWN &&
-                                            native.keyCode == android.view.KeyEvent.KEYCODE_DPAD_LEFT
-                                        ) {
-                                            onNavigateToRail()
-                                            true
-                                        } else false
-                                    }
-                                } else Modifier
-                            )
-                    )
-                }
-            }
+        // Channel Details / Info Panel Overlay (Wireframe Panel 4) - Triggered via Long Press or Options
+        selectedChannelForDetails?.let { detailChannel ->
+            TvChannelInfoPanel(
+                channel = detailChannel,
+                onWatch = {
+                    val toPlay = detailChannel
+                    selectedChannelForDetails = null
+                    onChannelClick(toPlay)
+                },
+                onToggleFavorite = { onToggleFavorite(detailChannel) },
+                onMoreInfo = { onChannelOptions(detailChannel) },
+                onClose = { selectedChannelForDetails = null }
+            )
         }
     }
 }

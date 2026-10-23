@@ -28,6 +28,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.LiveTv
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.Tv
 import androidx.compose.material3.Icon
@@ -177,16 +178,29 @@ fun rememberTvShimmerBrush(): Brush {
 }
 
 /**
- * Apple TV-inspired Fullscreen Startup Loading Screen.
- * Displays centralized app branding, animated TV spinner, and status indicators.
- * Optimized for OLED/LED televisions (1080p and 4K) with deep contrast and smooth transitions.
+ * Wireframe-matching Fullscreen Startup Loading Screen (Wireframe Panel 6).
+ * Dark space OLED background, glassmorphism centered card, glowing StreamDeck TV logo,
+ * and circular progress ring with real-time percentage display.
  */
 @Composable
 fun TvStartupLoadingScreen(
-    statusMessage: String = "Initializing StreamDeck TV…",
-    subStatusMessage: String? = "Connecting to channels and organizing your TV guide…",
+    statusMessage: String = "Loading your entertainment…",
+    subStatusMessage: String? = null,
+    progress: Float = 0.65f,
     modifier: Modifier = Modifier
 ) {
+    val infiniteTransition = rememberInfiniteTransition(label = "loading_anim")
+    val animatedProgress by infiniteTransition.animateFloat(
+        initialValue = 0.45f,
+        targetValue = 0.85f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 2200, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "progress_anim"
+    )
+    val displayPercent = ((progress.coerceIn(0.1f, 1f)) * 100).toInt()
+
     Box(
         modifier = modifier
             .fillMaxSize()
@@ -194,91 +208,152 @@ fun TvStartupLoadingScreen(
             .testTag("tv_startup_loading_screen"),
         contentAlignment = Alignment.Center
     ) {
-        // Subtle ambient background gradient
+        // Deep space ambient radial glow
         Canvas(modifier = Modifier.fillMaxSize()) {
             drawCircle(
                 brush = Brush.radialGradient(
                     colors = listOf(
-                        TvPrimary.copy(alpha = 0.08f),
-                        TvSecondary.copy(alpha = 0.03f),
+                        TvPrimary.copy(alpha = 0.12f),
+                        TvSecondary.copy(alpha = 0.04f),
                         Color.Transparent
                     ),
                     center = center,
-                    radius = size.maxDimension * 0.45f
+                    radius = size.maxDimension * 0.42f
                 )
             )
         }
 
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center,
-            modifier = Modifier.padding(horizontal = 32.dp)
-        ) {
-            // App Branding Icon Platter
-            Box(
-                modifier = Modifier
-                    .size(92.dp)
-                    .clip(RoundedCornerShape(22.dp))
-                    .background(
-                        Brush.verticalGradient(
-                            listOf(
-                                TvPrimary.copy(alpha = 0.25f),
-                                TvSurfaceCard
-                            )
+        // Glassmorphism Centered Card (Wireframe Panel 6)
+        Box(
+            modifier = Modifier
+                .width(420.dp)
+                .clip(RoundedCornerShape(24.dp))
+                .background(
+                    Brush.verticalGradient(
+                        listOf(
+                            Color(0xE6121624),
+                            Color(0xF20A0D16)
                         )
                     )
-                    .border(1.5.dp, TvPrimary.copy(alpha = 0.6f), RoundedCornerShape(22.dp)),
-                contentAlignment = Alignment.Center
+                )
+                .border(
+                    width = 1.dp,
+                    brush = Brush.verticalGradient(
+                        listOf(
+                            Color(0x35FFFFFF),
+                            Color(0x10FFFFFF)
+                        )
+                    ),
+                    shape = RoundedCornerShape(24.dp)
+                )
+                .padding(vertical = 36.dp, horizontal = 32.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
             ) {
-                Icon(
-                    imageVector = Icons.Default.LiveTv,
-                    contentDescription = null,
-                    tint = TvPrimary,
-                    modifier = Modifier.size(52.dp)
-                )
-            }
+                // Branded Play Logo with glowing gradient
+                Box(
+                    modifier = Modifier
+                        .size(72.dp)
+                        .clip(RoundedCornerShape(18.dp))
+                        .background(
+                            Brush.linearGradient(
+                                listOf(TvPrimary, Color(0xFF5E5CE6))
+                            )
+                        )
+                        .border(1.5.dp, Color(0x60FFFFFF), RoundedCornerShape(18.dp)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.LiveTv,
+                        contentDescription = null,
+                        tint = Color.White,
+                        modifier = Modifier.size(42.dp)
+                    )
+                }
 
-            Spacer(modifier = Modifier.height(24.dp))
+                Spacer(modifier = Modifier.height(18.dp))
 
-            // App Title
-            Text(
-                text = "StreamDeck TV",
-                color = TvTextPrimary,
-                fontSize = 28.sp,
-                fontWeight = FontWeight.Bold,
-                letterSpacing = 0.5.sp
-            )
-
-            Spacer(modifier = Modifier.height(28.dp))
-
-            // Sleek Apple TV Style Loading Spinner
-            TvSpinner(
-                size = TvSpinnerSize.Large,
-                primaryColor = TvPrimary,
-                secondaryColor = TvAccent
-            )
-
-            Spacer(modifier = Modifier.height(22.dp))
-
-            // Status Message
-            Text(
-                text = statusMessage,
-                color = TvTextPrimary,
-                fontSize = 15.sp,
-                fontWeight = FontWeight.SemiBold,
-                textAlign = TextAlign.Center
-            )
-
-            if (!subStatusMessage.isNullOrBlank()) {
-                Spacer(modifier = Modifier.height(6.dp))
+                // Brand Title
                 Text(
-                    text = subStatusMessage,
-                    color = TvTextSecondary,
-                    fontSize = 12.5.sp,
-                    textAlign = TextAlign.Center,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis
+                    text = "StreamDeck TV",
+                    color = Color.White,
+                    fontSize = 24.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 0.5.sp
                 )
+
+                Spacer(modifier = Modifier.height(6.dp))
+
+                // Subtitle
+                Text(
+                    text = statusMessage,
+                    color = TvTextSecondary,
+                    fontSize = 13.5.sp,
+                    textAlign = TextAlign.Center
+                )
+
+                Spacer(modifier = Modifier.height(28.dp))
+
+                // Circular Progress Ring with Percentage (Wireframe Panel 6)
+                Box(
+                    modifier = Modifier.size(76.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Canvas(modifier = Modifier.fillMaxSize()) {
+                        val strokePx = 4.5.dp.toPx()
+                        val radius = (size.minDimension - strokePx) / 2f
+
+                        // Background track
+                        drawCircle(
+                            color = Color(0x20FFFFFF),
+                            radius = radius,
+                            center = center,
+                            style = Stroke(width = strokePx)
+                        )
+
+                        // Active arc
+                        drawArc(
+                            brush = Brush.sweepGradient(
+                                listOf(
+                                    TvPrimary.copy(alpha = 0.5f),
+                                    TvAccent,
+                                    TvPrimary
+                                ),
+                                center = center
+                            ),
+                            startAngle = -90f,
+                            sweepAngle = 360f * animatedProgress,
+                            useCenter = false,
+                            style = Stroke(
+                                width = strokePx,
+                                cap = StrokeCap.Round
+                            )
+                        )
+                    }
+
+                    // Centered percentage text
+                    Text(
+                        text = "$displayPercent%",
+                        color = Color.White,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+
+                if (!subStatusMessage.isNullOrBlank()) {
+                    Spacer(modifier = Modifier.height(18.dp))
+                    Text(
+                        text = subStatusMessage,
+                        color = TvTextSecondary,
+                        fontSize = 12.sp,
+                        textAlign = TextAlign.Center,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
             }
         }
     }
@@ -642,3 +717,165 @@ fun TvChannelLogo(
         }
     }
 }
+
+/**
+ * TV Error State Card (Wireframe Panel 9).
+ * Dark glass card with alert icon, error message, and a focused Retry action button.
+ */
+@Composable
+fun TvErrorState(
+    title: String = "Unable to load channels",
+    subtitle: String = "Please check your internet connection or playlist URL",
+    onRetry: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Box(
+        modifier = modifier
+            .fillMaxSize()
+            .padding(24.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Box(
+            modifier = Modifier
+                .width(380.dp)
+                .clip(RoundedCornerShape(20.dp))
+                .background(Color(0xE6141824))
+                .border(1.dp, Color(0x28FFFFFF), RoundedCornerShape(20.dp))
+                .padding(vertical = 32.dp, horizontal = 28.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
+            ) {
+                // Alert Red Circle Icon
+                Box(
+                    modifier = Modifier
+                        .size(56.dp)
+                        .clip(CircleShape)
+                        .background(Color(0x28FF453A))
+                        .border(1.5.dp, Color(0xFFFF453A), CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "!",
+                        color = Color(0xFFFF453A),
+                        fontSize = 28.sp,
+                        fontWeight = FontWeight.Black
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(18.dp))
+
+                Text(
+                    text = title,
+                    color = TvTextPrimary,
+                    fontSize = 17.sp,
+                    fontWeight = FontWeight.Bold,
+                    textAlign = TextAlign.Center
+                )
+
+                Spacer(modifier = Modifier.height(6.dp))
+
+                Text(
+                    text = subtitle,
+                    color = TvTextSecondary,
+                    fontSize = 12.5.sp,
+                    textAlign = TextAlign.Center,
+                    lineHeight = 17.sp
+                )
+
+                Spacer(modifier = Modifier.height(22.dp))
+
+                TvFocusableButton(
+                    text = "Retry",
+                    onClick = onRetry,
+                    isPrimary = true,
+                    modifier = Modifier.width(160.dp)
+                )
+            }
+        }
+    }
+}
+
+/**
+ * TV Empty State Card (Wireframe Panel 9).
+ * Dark glass card with empty box icon, helpful suggestion, and a Back to Home button.
+ */
+@Composable
+fun TvEmptyState(
+    title: String = "No channels found",
+    subtitle: String = "Try selecting a different category or search term",
+    actionLabel: String = "Back to Home",
+    onAction: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Box(
+        modifier = modifier
+            .fillMaxSize()
+            .padding(24.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Box(
+            modifier = Modifier
+                .width(380.dp)
+                .clip(RoundedCornerShape(20.dp))
+                .background(Color(0xE6141824))
+                .border(1.dp, Color(0x28FFFFFF), RoundedCornerShape(20.dp))
+                .padding(vertical = 32.dp, horizontal = 28.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
+            ) {
+                // Empty Box Container
+                Box(
+                    modifier = Modifier
+                        .size(56.dp)
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(Color(0x18FFFFFF))
+                        .border(1.dp, Color(0x30FFFFFF), RoundedCornerShape(14.dp)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Tv,
+                        contentDescription = null,
+                        tint = TvAccent,
+                        modifier = Modifier.size(28.dp)
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(18.dp))
+
+                Text(
+                    text = title,
+                    color = TvTextPrimary,
+                    fontSize = 17.sp,
+                    fontWeight = FontWeight.Bold,
+                    textAlign = TextAlign.Center
+                )
+
+                Spacer(modifier = Modifier.height(6.dp))
+
+                Text(
+                    text = subtitle,
+                    color = TvTextSecondary,
+                    fontSize = 12.5.sp,
+                    textAlign = TextAlign.Center,
+                    lineHeight = 17.sp
+                )
+
+                Spacer(modifier = Modifier.height(22.dp))
+
+                TvFocusableButton(
+                    text = actionLabel,
+                    onClick = onAction,
+                    isPrimary = true,
+                    modifier = Modifier.width(170.dp)
+                )
+            }
+        }
+    }
+}
+

@@ -2,6 +2,11 @@ package com.example.ui.components
 
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -12,6 +17,9 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
@@ -35,7 +43,14 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.ChevronLeft
+import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Tv
 import androidx.compose.material.icons.outlined.StarBorder
@@ -43,6 +58,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -95,12 +111,12 @@ fun TvFocusableCard(
 
     val scale by animateFloatAsState(
         targetValue = when {
-            isFocused && isSelected -> 1.05f
-            isFocused -> 1.04f
+            isFocused && isSelected -> 1.06f
+            isFocused -> 1.05f
             isSelected -> 1.01f
             else -> 1.0f
         },
-        animationSpec = tween(90),
+        animationSpec = tween(150),
         label = "tv_card_scale"
     )
 
@@ -111,7 +127,7 @@ fun TvFocusableCard(
             isSelected -> selectedBorderColor
             else -> unfocusedBorderColor
         },
-        animationSpec = tween(90),
+        animationSpec = tween(150),
         label = "tv_card_border_color"
     )
 
@@ -123,10 +139,10 @@ fun TvFocusableCard(
     }
 
     val backgroundColor = when {
-        isFocused && isSelected -> Color(0xFF2B3346)
-        isFocused -> Color(0xFF242C3D)
-        isSelected -> Color(0xFF1E2638)
-        else -> Color(0xFF181A20)
+        isFocused && isSelected -> Color(0xFF1A2540)
+        isFocused -> Color(0xFF162035)
+        isSelected -> Color(0xFF14203A)
+        else -> Color(0xFF101420)
     }
 
     val clickModifier = if (onLongClick != null) {
@@ -145,6 +161,11 @@ fun TvFocusableCard(
     }
 
     var keyDownTime by remember { mutableStateOf(0L) }
+    LaunchedEffect(isFocused) {
+        if (!isFocused) {
+            keyDownTime = 0L
+        }
+    }
 
     Box(
         modifier = modifier
@@ -154,12 +175,10 @@ fun TvFocusableCard(
             }
             .clip(shape)
             .background(backgroundColor)
-            .then(
-                if (currentBorderWidth > 0.dp) {
-                    Modifier.border(currentBorderWidth, currentBorderColor, shape)
-                } else {
-                    Modifier.border(1.dp, Color(0x18FFFFFF), shape)
-                }
+            .border(
+                width = if (currentBorderWidth > 0.dp) currentBorderWidth else 1.dp,
+                color = if (currentBorderWidth > 0.dp) currentBorderColor else Color(0x18FFFFFF),
+                shape = shape
             )
             .onPreviewKeyEvent { keyEvent ->
                 val native = keyEvent.nativeKeyEvent
@@ -179,11 +198,11 @@ fun TvFocusableCard(
                         if (keyDownTime == 0L) {
                             keyDownTime = System.currentTimeMillis()
                         }
-                        false
+                        true // Consume ACTION_DOWN to prevent clickable from handling it
                     } else if (native.action == android.view.KeyEvent.ACTION_UP) {
                         val duration = if (keyDownTime > 0L) System.currentTimeMillis() - keyDownTime else 0L
                         keyDownTime = 0L
-                        if (duration >= 450L && onLongClick != null) {
+                        if (duration in 450L..2500L && onLongClick != null) {
                             onLongClick()
                             true
                         } else {
@@ -386,7 +405,81 @@ fun TvFocusableIconButton(
     }
 }
 
-@OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
+/**
+ * Animated Audio Equalizer Wave Bars (Wireframe Panel 3).
+ * Rendered when channel is in Playing state.
+ */
+@Composable
+fun TvAudioEqualizerBars(
+    modifier: Modifier = Modifier,
+    barColor: Color = TvPrimary
+) {
+    val infiniteTransition = rememberInfiniteTransition(label = "audio_bars")
+    val bar1Height by infiniteTransition.animateFloat(
+        initialValue = 4f,
+        targetValue = 13f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 420, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "bar1"
+    )
+    val bar2Height by infiniteTransition.animateFloat(
+        initialValue = 12f,
+        targetValue = 5f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 540, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "bar2"
+    )
+    val bar3Height by infiniteTransition.animateFloat(
+        initialValue = 6f,
+        targetValue = 14f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 380, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "bar3"
+    )
+
+    Row(
+        modifier = modifier.height(14.dp),
+        horizontalArrangement = Arrangement.spacedBy(2.dp),
+        verticalAlignment = Alignment.Bottom
+    ) {
+        Box(
+            modifier = Modifier
+                .width(2.5.dp)
+                .height(bar1Height.dp)
+                .clip(RoundedCornerShape(1.dp))
+                .background(barColor)
+        )
+        Box(
+            modifier = Modifier
+                .width(2.5.dp)
+                .height(bar2Height.dp)
+                .clip(RoundedCornerShape(1.dp))
+                .background(barColor)
+        )
+        Box(
+            modifier = Modifier
+                .width(2.5.dp)
+                .height(bar3Height.dp)
+                .clip(RoundedCornerShape(1.dp))
+                .background(barColor)
+        )
+    }
+}
+
+/**
+ * Premium single-focus-target channel card (Wireframe Panel 3).
+ * Visual states:
+ * 1. Normal: clean dark glass surface, logo, channel name, Ch number, subtle favorite star.
+ * 2. Focused: bright blue glow border (TvFocusBorder), 1.05x subtle scale, star visible.
+ * 3. Selected (OK Press): checkmark badge confirmation indicator.
+ * 4. Playing: LIVE badge + audio equalizer wave animation.
+ */
 @Composable
 fun TvChannelCard(
     channel: Channel,
@@ -394,379 +487,540 @@ fun TvChannelCard(
     onToggleFavorite: () -> Unit,
     modifier: Modifier = Modifier,
     isSelected: Boolean = false,
+    isPlaying: Boolean = false,
     onOptionsClick: (() -> Unit)? = null,
     onCategoryClick: ((String) -> Unit)? = null,
     focusRequester: FocusRequester? = null
 ) {
-    var cardHasFocus by remember { mutableStateOf(false) }
-
-    val titleFocusRequester = focusRequester ?: remember { FocusRequester() }
-    val favFocusRequester = remember { FocusRequester() }
-    val moreFocusRequester = remember { FocusRequester() }
-    val catFocusRequester = remember { FocusRequester() }
-
-    val titleInteractionSource = remember { MutableInteractionSource() }
-    val isTitleFocused by titleInteractionSource.collectIsFocusedAsState()
-
-    val catInteractionSource = remember { MutableInteractionSource() }
-    val isCatFocused by catInteractionSource.collectIsFocusedAsState()
-
-    val cardScale by animateFloatAsState(
-        targetValue = when {
-            cardHasFocus && isSelected -> 1.05f
-            cardHasFocus -> 1.03f
-            isSelected -> 1.01f
-            else -> 1.0f
-        },
-        animationSpec = tween(90),
-        label = "channel_card_scale"
-    )
-
-    val cardBorderColor by animateColorAsState(
-        targetValue = when {
-            isTitleFocused -> TvFocusBorder
-            cardHasFocus -> Color(0x604A90E2)
-            isSelected -> TvPrimary
-            else -> Color(0x18FFFFFF)
-        },
-        animationSpec = tween(90),
-        label = "channel_card_border"
-    )
-
-    val cardBgColor = when {
-        cardHasFocus && isSelected -> Color(0xFF2B3346)
-        cardHasFocus -> Color(0xFF242C3D)
-        isSelected -> Color(0xFF1E2638)
-        else -> Color(0xFF181A20)
-    }
-
-    Box(
+    TvFocusableCard(
+        onClick = onClick,
+        isSelected = isSelected,
         modifier = modifier
-            .focusGroup()
-            .focusProperties {
-                enter = { titleFocusRequester }
-            }
-            .graphicsLayer {
-                scaleX = cardScale
-                scaleY = cardScale
-            }
+            .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
             .height(152.dp)
-            .clip(RoundedCornerShape(12.dp))
-            .background(cardBgColor)
-            .border(
-                width = if (isTitleFocused) 2.5.dp else if (cardHasFocus || isSelected) 2.dp else 1.dp,
-                color = cardBorderColor,
-                shape = RoundedCornerShape(12.dp)
-            )
-            .onFocusChanged { cardHasFocus = it.hasFocus }
+            .testTag("channel_card_${channel.id}")
             .onPreviewKeyEvent { keyEvent ->
                 val native = keyEvent.nativeKeyEvent
-                if (native.action == android.view.KeyEvent.ACTION_UP &&
-                    (native.keyCode == android.view.KeyEvent.KEYCODE_PROG_YELLOW ||
-                     native.keyCode == android.view.KeyEvent.KEYCODE_BUTTON_Y ||
-                     native.keyCode == android.view.KeyEvent.KEYCODE_STAR)
-                ) {
-                    onToggleFavorite()
-                    true
+                if (native.action == android.view.KeyEvent.ACTION_UP) {
+                    when (native.keyCode) {
+                        android.view.KeyEvent.KEYCODE_PROG_YELLOW,
+                        android.view.KeyEvent.KEYCODE_BUTTON_Y,
+                        android.view.KeyEvent.KEYCODE_STAR -> {
+                            onToggleFavorite()
+                            true
+                        }
+                        else -> false
+                    }
                 } else false
-            }
-            .testTag("channel_card_${channel.id}")
-            .padding(12.dp)
-    ) {
+            },
+        onLongClick = onOptionsClick,
+        shape = RoundedCornerShape(14.dp),
+        focusedBorderColor = TvFocusBorder,
+        borderWidth = 2.5.dp
+    ) { isFocused, cardIsSelected ->
+        val channelNumber = remember(channel.id) { (channel.id % 900 + 100).toInt() }
+
         Column(
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(10.dp),
             verticalArrangement = Arrangement.SpaceBetween
         ) {
-            // Row 1: Logo + LIVE/PLAYING badge + Favorite Button + More Vert Button
+            // Top Row: Status badge / Number on left, Indicators on right
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // Left: Logo + Badge
+                // Left: Playing/LIVE badge or Channel Number
+                if (isPlaying) {
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(4.dp))
+                            .background(TvLiveRed)
+                            .padding(horizontal = 5.dp, vertical = 2.dp)
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(3.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(5.dp)
+                                    .clip(CircleShape)
+                                    .background(Color.White)
+                            )
+                            Text(
+                                text = "LIVE",
+                                color = Color.White,
+                                fontSize = 8.5.sp,
+                                fontWeight = FontWeight.ExtraBold
+                            )
+                        }
+                    }
+                } else {
+                    Text(
+                        text = "Ch $channelNumber",
+                        color = if (isFocused) TvAccent else TvTextSecondary,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+
+                // Right Indicators: Selected Checkmark / Playing Equalizer / Favorite Star
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    if (isPlaying) {
+                        TvAudioEqualizerBars(barColor = if (isFocused) Color.White else TvAccent)
+                    } else if (cardIsSelected) {
+                        Box(
+                            modifier = Modifier
+                                .size(18.dp)
+                                .clip(CircleShape)
+                                .background(TvPrimary),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Check,
+                                contentDescription = "Selected",
+                                tint = Color.White,
+                                modifier = Modifier.size(12.dp)
+                            )
+                        }
+                    }
+
+                    // Favorite Star (Gold if favorite, outline if focused and not favorite)
+                    if (channel.isFavorite) {
+                        Icon(
+                            imageVector = Icons.Default.Star,
+                            contentDescription = "Favorite",
+                            tint = TvFavoriteGold,
+                            modifier = Modifier.size(16.dp)
+                        )
+                    } else if (isFocused) {
+                        Icon(
+                            imageVector = Icons.Outlined.StarBorder,
+                            contentDescription = "Toggle Favorite",
+                            tint = Color(0x90FFFFFF),
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+                }
+            }
+
+            // Center: Channel Logo
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(60.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(52.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(
+                            when {
+                                isPlaying -> TvLiveRed.copy(alpha = 0.2f)
+                                isFocused && cardIsSelected -> TvPrimary.copy(alpha = 0.35f)
+                                cardIsSelected -> TvPrimary.copy(alpha = 0.2f)
+                                isFocused -> Color(0xFF1E283D)
+                                else -> Color(0xFF131722)
+                            }
+                        )
+                        .border(
+                            width = 1.dp,
+                            color = when {
+                                isPlaying -> TvLiveRed.copy(alpha = 0.5f)
+                                isFocused -> Color(0x35FFFFFF)
+                                else -> Color(0x14FFFFFF)
+                            },
+                            shape = RoundedCornerShape(12.dp)
+                        )
+                        .padding(5.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    TvChannelLogo(
+                        logoUrl = channel.tvgLogo,
+                        channelName = channel.name,
+                        iconSize = 30.dp,
+                        fallbackTint = when {
+                            isFocused || cardIsSelected -> TvPrimary
+                            else -> TvTextSecondary
+                        }
+                    )
+                }
+            }
+
+            // Bottom: Channel Name + Category / Subtitle
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(2.dp)
+            ) {
+                Text(
+                    text = channel.name,
+                    color = when {
+                        isFocused -> Color.White
+                        cardIsSelected -> TvPrimary
+                        else -> TvTextPrimary
+                    },
+                    fontWeight = if (isFocused || cardIsSelected) FontWeight.Bold else FontWeight.SemiBold,
+                    fontSize = 13.5.sp,
+                    lineHeight = 17.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+
+                val categoryText = when {
+                    channel.contentCategory.isNotBlank() -> channel.contentCategory
+                    channel.effectiveLanguage.isNotBlank() -> channel.effectiveLanguage.uppercase()
+                    else -> "Live"
+                }
+
+                Text(
+                    text = categoryText,
+                    color = if (isFocused) TvAccent else TvTextSecondary,
+                    fontSize = 10.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
+    }
+}
+
+/**
+ * Horizontal Channel Row with smooth auto-scroll and left/right indicators (Wireframe Panel 5).
+ * LEFT key at index 0 navigates to the navigation rail.
+ */
+@Composable
+fun TvChannelRow(
+    title: String,
+    channels: List<Channel>,
+    onChannelClick: (Channel) -> Unit,
+    onToggleFavorite: (Channel) -> Unit,
+    onOptionsClick: (Channel) -> Unit,
+    modifier: Modifier = Modifier,
+    selectedChannelId: Long? = null,
+    playingChannelId: Long? = null,
+    onNavigateToRail: (() -> Unit)? = null,
+    isFirstRow: Boolean = false,
+    firstItemFocusRequester: FocusRequester? = null
+) {
+    if (channels.isEmpty()) return
+
+    val listState = rememberLazyListState()
+
+    Column(
+        modifier = modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        // Row Header
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = title,
+                color = TvTextPrimary,
+                fontSize = 17.sp,
+                fontWeight = FontWeight.Bold
+            )
+
+            Text(
+                text = "${channels.size} channels",
+                color = TvTextSecondary,
+                fontSize = 11.5.sp
+            )
+        }
+
+        // Horizontal Carousel with Left/Right chevrons and auto-scroll
+        Box(
+            modifier = Modifier.fillMaxWidth(),
+            contentAlignment = Alignment.CenterStart
+        ) {
+            LazyRow(
+                state = listState,
+                horizontalArrangement = Arrangement.spacedBy(14.dp),
+                contentPadding = PaddingValues(horizontal = 4.dp, vertical = 4.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                itemsIndexed(channels, key = { _, channel -> channel.id }) { index, channel ->
+                    val isFirstItem = index == 0
+                    TvChannelCard(
+                        channel = channel,
+                        onClick = { onChannelClick(channel) },
+                        onToggleFavorite = { onToggleFavorite(channel) },
+                        onOptionsClick = { onOptionsClick(channel) },
+                        isSelected = selectedChannelId == channel.id,
+                        isPlaying = playingChannelId == channel.id,
+                        focusRequester = if (isFirstRow && isFirstItem) firstItemFocusRequester else null,
+                        modifier = Modifier
+                            .width(136.dp)
+                            .then(
+                                if (isFirstItem && onNavigateToRail != null) {
+                                    Modifier.onPreviewKeyEvent { keyEvent ->
+                                        val native = keyEvent.nativeKeyEvent
+                                        if (native.action == android.view.KeyEvent.ACTION_DOWN &&
+                                            native.keyCode == android.view.KeyEvent.KEYCODE_DPAD_LEFT
+                                        ) {
+                                            onNavigateToRail()
+                                            true
+                                        } else false
+                                    }
+                                } else Modifier
+                            )
+                    )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Channel Details / Info Panel (Wireframe Panel 4).
+ * Appears when a channel is selected, showing video preview, metadata, Watch, Favorite, and Up Next.
+ */
+@Composable
+fun TvChannelInfoPanel(
+    channel: Channel,
+    onWatch: () -> Unit,
+    onToggleFavorite: () -> Unit,
+    onMoreInfo: () -> Unit,
+    onClose: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val watchButtonFocusRequester = remember { FocusRequester() }
+    val channelNumber = remember(channel.id) { (channel.id % 900 + 100).toInt() }
+
+    androidx.compose.runtime.LaunchedEffect(Unit) {
+        kotlinx.coroutines.delay(100)
+        try {
+            watchButtonFocusRequester.requestFocus()
+        } catch (_: Exception) {}
+    }
+
+    Box(
+        modifier = modifier
+            .fillMaxSize()
+            .background(Color(0xE6080A12))
+            .onPreviewKeyEvent { keyEvent ->
+                val native = keyEvent.nativeKeyEvent
+                if (native.action == android.view.KeyEvent.ACTION_DOWN &&
+                    native.keyCode == android.view.KeyEvent.KEYCODE_BACK
+                ) {
+                    onClose()
+                    true
+                } else false
+            }
+            .padding(24.dp)
+    ) {
+        Column(modifier = Modifier.fillMaxSize()) {
+            // Top Bar with Back action
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                TvFocusableIconButton(
+                    icon = Icons.AutoMirrored.Filled.ArrowBack,
+                    contentDescription = "Close Info",
+                    onClick = onClose
+                )
+
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     Box(
                         modifier = Modifier
-                            .size(42.dp)
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(
-                                when {
-                                    cardHasFocus && isSelected -> TvPrimary.copy(alpha = 0.35f)
-                                    isSelected -> TvPrimary.copy(alpha = 0.2f)
-                                    cardHasFocus -> Color(0xFF2E384D)
-                                    else -> Color(0xFF1E222B)
-                                }
-                            )
-                            .border(
-                                width = 1.dp,
-                                color = if (isSelected) TvPrimary.copy(alpha = 0.8f) else Color(0x22FFFFFF),
-                                shape = RoundedCornerShape(8.dp)
-                            )
-                            .padding(3.dp),
-                        contentAlignment = Alignment.Center
+                            .clip(RoundedCornerShape(4.dp))
+                            .background(TvLiveRed)
+                            .padding(horizontal = 6.dp, vertical = 2.dp)
                     ) {
-                        TvChannelLogo(
-                            logoUrl = channel.tvgLogo,
-                            channelName = channel.name,
-                            iconSize = 24.dp,
-                            fallbackTint = when {
-                                cardHasFocus || isSelected -> TvPrimary
-                                else -> TvTextSecondary
-                            }
-                        )
-                    }
-
-                    if (isSelected) {
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(6.dp))
-                                .background(TvPrimary)
-                                .padding(horizontal = 6.dp, vertical = 3.dp)
-                        ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(4.dp)
-                            ) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(6.dp)
-                                        .clip(CircleShape)
-                                        .background(Color.White)
-                                )
-                                Text(
-                                    text = "PLAYING",
-                                    color = Color.White,
-                                    fontSize = 9.sp,
-                                    fontWeight = FontWeight.ExtraBold
-                                )
-                            }
-                        }
-                    } else {
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(6.dp))
-                                .background(TvLiveRed.copy(alpha = 0.2f))
-                                .border(1.dp, TvLiveRed.copy(alpha = 0.7f), RoundedCornerShape(6.dp))
-                                .padding(horizontal = 6.dp, vertical = 3.dp)
-                        ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(4.dp)
-                            ) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(5.dp)
-                                        .clip(CircleShape)
-                                        .background(TvLiveRed)
-                                )
-                                Text(
-                                    text = "LIVE",
-                                    color = TvLiveRed,
-                                    fontSize = 9.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
-                            }
-                        }
-                    }
-                }
-
-                // Right: Action Buttons (Favorite Star & More Vert Options)
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    TvFocusableIconButton(
-                        icon = if (channel.isFavorite) Icons.Default.Star else Icons.Outlined.StarBorder,
-                        contentDescription = if (channel.isFavorite) "Remove favorite" else "Add favorite",
-                        onClick = onToggleFavorite,
-                        iconTint = if (channel.isFavorite) TvFavoriteGold else TvTextSecondary,
-                        focusedBorderColor = TvFavoriteGold,
-                        focusedBackgroundColor = TvFavoriteGold.copy(alpha = 0.3f),
-                        size = 32.dp,
-                        iconSize = 18.dp,
-                        focusRequester = favFocusRequester,
-                        modifier = Modifier.focusProperties {
-                            left = titleFocusRequester
-                            right = if (onOptionsClick != null) moreFocusRequester else catFocusRequester
-                        }
-                    )
-
-                    if (onOptionsClick != null) {
-                        TvFocusableIconButton(
-                            icon = Icons.Default.MoreVert,
-                            contentDescription = "Channel options",
-                            onClick = onOptionsClick,
-                            iconTint = if (cardHasFocus || isSelected) TvPrimary else TvTextSecondary,
-                            focusedBorderColor = TvPrimary,
-                            focusedBackgroundColor = TvPrimary.copy(alpha = 0.35f),
-                            size = 32.dp,
-                            iconSize = 17.dp,
-                            focusRequester = moreFocusRequester,
-                            modifier = Modifier.focusProperties {
-                                left = favFocusRequester
-                                right = catFocusRequester
-                            }
+                        Text(
+                            text = "LIVE",
+                            color = Color.White,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold
                         )
                     }
                 }
             }
 
-            // Middle: Channel Title Area (Focusable & Clickable to Play!)
-            Box(
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Main Content: Left Preview Video/Thumbnail + Right Metadata
+            Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(8.dp))
-                    .then(
-                        if (isTitleFocused) {
-                            Modifier
-                                .background(TvPrimary.copy(alpha = 0.22f))
-                                .border(1.5.dp, TvFocusBorder, RoundedCornerShape(8.dp))
-                                .padding(horizontal = 8.dp, vertical = 4.dp)
-                        } else {
-                            Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
-                        }
-                    )
-                    .focusRequester(titleFocusRequester)
-                    .focusProperties {
-                        right = favFocusRequester
-                    }
-                    .onPreviewKeyEvent { keyEvent ->
-                        val native = keyEvent.nativeKeyEvent
-                        val isConfirm = native.keyCode == android.view.KeyEvent.KEYCODE_DPAD_CENTER ||
-                                        native.keyCode == android.view.KeyEvent.KEYCODE_ENTER ||
-                                        native.keyCode == android.view.KeyEvent.KEYCODE_NUMPAD_ENTER ||
-                                        native.keyCode == android.view.KeyEvent.KEYCODE_BUTTON_A
-                        val isMenu = native.keyCode == android.view.KeyEvent.KEYCODE_MENU
-                        if (isMenu && native.action == android.view.KeyEvent.ACTION_UP) {
-                            onOptionsClick?.invoke()
-                            true
-                        } else if (isConfirm && native.action == android.view.KeyEvent.ACTION_DOWN) {
-                            onClick()
-                            true
-                        } else if (isConfirm && native.action == android.view.KeyEvent.ACTION_UP) {
-                            true
-                        } else false
-                    }
-                    .clickable(
-                        interactionSource = titleInteractionSource,
-                        indication = androidx.compose.material3.ripple(),
-                        onClick = onClick
-                    )
+                    .weight(1f),
+                horizontalArrangement = Arrangement.spacedBy(28.dp)
             ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
+                // Left: Preview Card (16:9)
+                Box(
+                    modifier = Modifier
+                        .weight(1.1f)
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(Color(0xFF121622))
+                        .border(1.dp, Color(0x30FFFFFF), RoundedCornerShape(16.dp)),
+                    contentAlignment = Alignment.Center
                 ) {
-                    Text(
-                        text = channel.name,
-                        color = when {
-                            isTitleFocused -> Color.White
-                            isSelected -> TvPrimary
-                            cardHasFocus -> Color.White
-                            else -> TvTextPrimary
-                        },
-                        fontWeight = if (isTitleFocused || isSelected) FontWeight.Bold else FontWeight.SemiBold,
-                        fontSize = 14.5.sp,
-                        lineHeight = 18.sp,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f, fill = false)
+                    TvChannelLogo(
+                        logoUrl = channel.tvgLogo,
+                        channelName = channel.name,
+                        iconSize = 64.dp
                     )
-                    if (isTitleFocused) {
+
+                    // LIVE badge on bottom left of preview
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.BottomStart)
+                            .padding(14.dp)
+                            .clip(RoundedCornerShape(4.dp))
+                            .background(TvLiveRed)
+                            .padding(horizontal = 7.dp, vertical = 3.dp)
+                    ) {
                         Text(
-                            text = "▶",
-                            color = TvPrimary,
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier.padding(start = 4.dp)
+                            text = "LIVE BROADCAST",
+                            color = Color.White,
+                            fontSize = 9.5.sp,
+                            fontWeight = FontWeight.Bold
                         )
                     }
                 }
-            }
 
-            // Bottom Row: Language Pill + Category Badge (Focusable & Clickable to Filter!)
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                // Language pill
-                Box(
+                // Right: Channel Metadata + Actions + Up Next
+                Column(
                     modifier = Modifier
-                        .clip(RoundedCornerShape(4.dp))
-                        .background(
-                            when {
-                                isSelected -> TvPrimary.copy(alpha = 0.25f)
-                                cardHasFocus -> TvPrimary.copy(alpha = 0.25f)
-                                else -> TvSurfaceVariant
-                            }
-                        )
-                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                        .weight(1f)
+                        .padding(vertical = 4.dp),
+                    verticalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Text(
-                        text = channel.effectiveLanguage.uppercase(),
-                        color = if (cardHasFocus || isSelected) TvPrimary else TvAccent,
-                        fontSize = 9.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
+                    Column {
+                        // Channel Logo + Name + Ch 103
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(14.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(44.dp)
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(Color(0xFF1A2234))
+                                    .padding(4.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                TvChannelLogo(
+                                    logoUrl = channel.tvgLogo,
+                                    channelName = channel.name,
+                                    iconSize = 26.dp
+                                )
+                            }
 
-                // Category pill: Focusable and Clickable!
-                val categoryName = if (channel.contentCategory.isNotBlank()) channel.contentCategory else "General"
-                Box(
-                    modifier = Modifier
-                        .focusRequester(catFocusRequester)
-                        .focusProperties {
-                            left = if (onOptionsClick != null) moreFocusRequester else favFocusRequester
-                        }
-                        .graphicsLayer {
-                            scaleX = if (isCatFocused) 1.08f else 1.0f
-                            scaleY = if (isCatFocused) 1.08f else 1.0f
-                        }
-                        .clip(RoundedCornerShape(6.dp))
-                        .background(
-                            when {
-                                isCatFocused -> TvAccent.copy(alpha = 0.35f)
-                                else -> Color(0x252E384D)
+                            Column {
+                                Text(
+                                    text = channel.name,
+                                    color = Color.White,
+                                    fontSize = 20.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    text = "Ch $channelNumber · ${channel.effectiveLanguage} · ${if (channel.contentCategory.isNotBlank()) channel.contentCategory else "Live TV"}",
+                                    color = TvAccent,
+                                    fontSize = 12.sp
+                                )
                             }
-                        )
-                        .border(
-                            width = if (isCatFocused) 2.dp else 1.dp,
-                            color = if (isCatFocused) TvAccent else Color(0x25FFFFFF),
-                            shape = RoundedCornerShape(6.dp)
-                        )
-                        .onPreviewKeyEvent { keyEvent ->
-                            val native = keyEvent.nativeKeyEvent
-                            val isConfirm = native.keyCode == android.view.KeyEvent.KEYCODE_DPAD_CENTER ||
-                                            native.keyCode == android.view.KeyEvent.KEYCODE_ENTER ||
-                                            native.keyCode == android.view.KeyEvent.KEYCODE_NUMPAD_ENTER ||
-                                            native.keyCode == android.view.KeyEvent.KEYCODE_BUTTON_A
-                            if (isConfirm && native.action == android.view.KeyEvent.ACTION_DOWN) {
-                                onCategoryClick?.invoke(categoryName)
-                                true
-                            } else if (isConfirm && native.action == android.view.KeyEvent.ACTION_UP) {
-                                true
-                            } else false
                         }
-                        .clickable(
-                            interactionSource = catInteractionSource,
-                            indication = androidx.compose.material3.ripple(),
-                            onClick = { onCategoryClick?.invoke(categoryName) }
+
+                        Spacer(modifier = Modifier.height(16.dp))
+
+                        // Current Program Info
+                        Text(
+                            text = "${channel.name} Live Program",
+                            color = Color.White,
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.SemiBold
                         )
-                        .padding(horizontal = 7.dp, vertical = 2.dp)
-                ) {
-                    Text(
-                        text = categoryName,
-                        color = if (isCatFocused) Color.White else TvAccent,
-                        fontSize = 11.sp,
-                        fontWeight = if (isCatFocused) FontWeight.Bold else FontWeight.Medium,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
+                        Text(
+                            text = "Live Stream · High Definition Quality",
+                            color = TvTextSecondary,
+                            fontSize = 12.sp
+                        )
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        Text(
+                            text = "Stream digital broadcast in high definition directly to your Android TV with full remote playback controls.",
+                            color = TvTextSecondary,
+                            fontSize = 12.5.sp,
+                            lineHeight = 17.sp,
+                            maxLines = 3,
+                            overflow = TextOverflow.Ellipsis
+                        )
+
+                        Spacer(modifier = Modifier.height(20.dp))
+
+                        // Action Buttons: Watch, Add to Favorites, More Info
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            TvFocusableButton(
+                                text = "Watch",
+                                icon = Icons.Filled.PlayArrow,
+                                onClick = onWatch,
+                                isPrimary = true,
+                                modifier = Modifier.focusRequester(watchButtonFocusRequester)
+                            )
+
+                            TvFocusableButton(
+                                text = if (channel.isFavorite) "Favorited" else "Add to Favorites",
+                                icon = Icons.Default.Star,
+                                onClick = onToggleFavorite,
+                                isPrimary = false
+                            )
+
+                            TvFocusableButton(
+                                text = "More Info",
+                                icon = Icons.Default.MoreVert,
+                                onClick = onMoreInfo,
+                                isPrimary = false
+                            )
+                        }
+                    }
+
+                    // Up Next Section (Wireframe Panel 4)
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(Color(0x18FFFFFF))
+                            .border(1.dp, Color(0x1AFFFFFF), RoundedCornerShape(10.dp))
+                            .padding(12.dp)
+                    ) {
+                        Text(
+                            text = "UP NEXT",
+                            color = TvAccent,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "Evening Highlights & World News",
+                            color = Color.White,
+                            fontSize = 12.5.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+                        Text(
+                            text = "Next scheduled program segment",
+                            color = TvTextSecondary,
+                            fontSize = 11.sp
+                        )
+                    }
                 }
             }
         }

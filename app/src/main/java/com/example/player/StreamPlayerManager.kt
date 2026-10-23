@@ -153,23 +153,33 @@ class StreamPlayerManager(private val context: Context) {
     }
 
     fun playChannel(channel: Channel) {
-        val player = getPlayer()
+        try {
+            val player = getPlayer()
 
-        _uiState.value = PlayerUiState(
-            currentChannel = channel,
-            isLoading = true,
-            isPlaying = false,
-            errorMessage = null
-        )
+            _uiState.value = PlayerUiState(
+                currentChannel = channel,
+                isLoading = true,
+                isPlaying = false,
+                errorMessage = null
+            )
 
-        val uri = Uri.parse(channel.streamUrl)
-        val mediaSource = createMediaSource(uri)
+            val uri = Uri.parse(channel.streamUrl)
+            val mediaSource = createMediaSource(uri)
 
-        player.stop()
-        player.clearMediaItems()
-        player.setMediaSource(mediaSource)
-        player.prepare()
-        player.playWhenReady = true
+            player.stop()
+            player.clearMediaItems()
+            player.setMediaSource(mediaSource)
+            player.prepare()
+            player.playWhenReady = true
+        } catch (e: Throwable) {
+            android.util.Log.e("StreamPlayerManager", "Failed to play channel ${channel.name}: ${e.message}", e)
+            _uiState.value = PlayerUiState(
+                currentChannel = channel,
+                isLoading = false,
+                isPlaying = false,
+                errorMessage = "Playback failed: ${e.localizedMessage ?: "Playback error"}"
+            )
+        }
     }
 
     private fun createMediaSource(uri: Uri): MediaSource {

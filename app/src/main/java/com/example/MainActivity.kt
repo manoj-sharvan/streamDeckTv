@@ -40,6 +40,7 @@ import com.example.feature.player.PlayerScreen
 import com.example.feature.playlist.AddPlaylistDialog
 import com.example.feature.playlists.PlaylistsScreen
 import com.example.feature.settings.SettingsScreen
+import com.example.feature.storage.StorageManagementDialog
 import com.example.navigation.TvNavigationRail
 import com.example.ui.theme.MyApplicationTheme
 import com.example.ui.theme.TvBackground
@@ -146,6 +147,7 @@ fun MainAppContent(
     val showClearCacheDialog by viewModel.showClearCacheDialog.collectAsStateWithLifecycle()
 
     var isAddPlaylistDialogOpen by remember { mutableStateOf(false) }
+    var isStorageDialogOpen by remember { mutableStateOf(false) }
 
     // Preserved Scroll States across tabs and player playback
     val homeListState = rememberSaveable(saver = LazyListState.Saver) { LazyListState() }
@@ -169,23 +171,32 @@ fun MainAppContent(
         }
     }
 
-    // Automatically restore focus to channel catalog when returning from player
-    LaunchedEffect(isPlayerActive) {
+    // Automatically restore focus to channel catalog when returning from player or switching tabs
+    LaunchedEffect(isPlayerActive, currentTab) {
         if (!isPlayerActive) {
-            delay(120)
-            try {
-                contentFocusRequester.requestFocus()
-            } catch (_: Exception) {
-                try {
-                    railFocusRequester.requestFocus()
-                } catch (_: Exception) {}
+            for (attemptDelay in listOf(60L, 160L, 320L)) {
+                delay(attemptDelay)
+                val success = try {
+                    contentFocusRequester.requestFocus()
+                    true
+                } catch (_: Exception) {
+                    try {
+                        railFocusRequester.requestFocus()
+                        true
+                    } catch (_: Exception) {
+                        false
+                    }
+                }
+                if (success) break
             }
         }
     }
 
     // Complete TV Back Navigation Handler
     BackHandler(enabled = true) {
-        if (isAddPlaylistDialogOpen) {
+        if (isStorageDialogOpen) {
+            isStorageDialogOpen = false
+        } else if (isAddPlaylistDialogOpen) {
             isAddPlaylistDialogOpen = false
             viewModel.clearImportStatus()
         } else {
@@ -209,9 +220,7 @@ fun MainAppContent(
         ) {
         // TV Landscape Layout: Left Navigation Rail + Screen Content (retained across player transitions)
         Row(
-            modifier = Modifier
-                .fillMaxSize()
-                .focusProperties { canFocus = !isPlayerActive }
+            modifier = Modifier.fillMaxSize()
         ) {
             TvNavigationRail(
                 currentTab = currentTab,
@@ -264,7 +273,8 @@ fun MainAppContent(
                             onSelectCategoryAndNavigate = { cat ->
                                 viewModel.selectContentCategory(cat)
                                 viewModel.selectTab(NavTab.LIVE_TV)
-                            }
+                            },
+                            onOpenStorageDialog = { isStorageDialogOpen = true }
                         )
                     }
 
@@ -290,7 +300,9 @@ fun MainAppContent(
                             onSearchQueryChange = { viewModel.setSearchQuery(it) },
                             onChannelClick = { viewModel.playChannel(it) },
                             onToggleFavorite = { viewModel.toggleFavorite(it) },
-                            onChannelOptions = { viewModel.openChannelActions(it) }
+                            onChannelOptions = { viewModel.openChannelActions(it) },
+                            recentChannels = recentChannels,
+                            playingChannelId = playerUiState.currentChannel?.id
                         )
                     }
 
@@ -359,7 +371,8 @@ fun MainAppContent(
                             onDeletePlaylist = { viewModel.deletePlaylist(it) },
                             onAddPlaylistClick = { isAddPlaylistDialogOpen = true },
                             onClearPlaybackHistoryClick = { viewModel.showClearHistoryDialog() },
-                            onClearCacheClick = { viewModel.showClearCacheDialog() }
+                            onClearCacheClick = { viewModel.showClearCacheDialog() },
+                            onOpenStorageDialog = { isStorageDialogOpen = true }
                         )
                     }
                 }
@@ -462,6 +475,13 @@ fun MainAppContent(
                 icon = Icons.Default.Delete,
                 onConfirm = { viewModel.clearCachedChannels() },
                 onDismiss = { viewModel.dismissClearCacheDialog() }
+            )
+        }
+
+        // Storage & Cache Management Dashboard Modal Dialog
+        if (isStorageDialogOpen) {
+            StorageManagementDialog(
+                onDismiss = { isStorageDialogOpen = false }
             )
         }
     }

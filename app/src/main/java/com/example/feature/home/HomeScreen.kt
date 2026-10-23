@@ -40,6 +40,7 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material.icons.filled.WifiOff
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
@@ -66,6 +67,7 @@ import com.example.ui.components.TvCategoryChip
 import com.example.ui.components.TvChannelCard
 import com.example.ui.components.TvFocusableButton
 import com.example.ui.components.TvFocusableCard
+import com.example.ui.components.TvFocusableIconButton
 import com.example.ui.components.tvVerticalScrollbar
 import com.example.ui.theme.TvAccent
 import com.example.ui.theme.TvBackground
@@ -108,6 +110,7 @@ fun HomeScreen(
     onNavigateToSettings: () -> Unit,
     onSelectLanguageAndNavigate: (String) -> Unit,
     onSelectCategoryAndNavigate: (String) -> Unit,
+    onOpenStorageDialog: () -> Unit = {},
     contentFocusRequester: FocusRequester? = null,
     onNavigateToRail: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
@@ -115,6 +118,7 @@ fun HomeScreen(
 ) {
     var currentTimeString by remember { mutableStateOf("") }
 
+    val storageBtnFocusRequester = remember { FocusRequester() }
     val refreshBtnFocusRequester = remember { FocusRequester() }
     val addPlaylistBtnFocusRequester = remember { FocusRequester() }
     val viewAllFavoritesFocusRequester = remember { FocusRequester() }
@@ -185,7 +189,39 @@ fun HomeScreen(
                     fontSize = 13.sp,
                     fontWeight = FontWeight.SemiBold,
                     maxLines = 1,
-                    modifier = Modifier.padding(end = 6.dp)
+                    modifier = Modifier.padding(end = 4.dp)
+                )
+
+                // Storage Monitor & Cache Top Bar Icon
+                TvFocusableIconButton(
+                    icon = Icons.Default.Storage,
+                    contentDescription = "Device Storage & Cache Monitor",
+                    onClick = onOpenStorageDialog,
+                    focusRequester = storageBtnFocusRequester,
+                    modifier = Modifier.onPreviewKeyEvent { keyEvent ->
+                        val native = keyEvent.nativeKeyEvent
+                        if (native.action == android.view.KeyEvent.ACTION_DOWN) {
+                            when (native.keyCode) {
+                                android.view.KeyEvent.KEYCODE_DPAD_LEFT -> {
+                                    onNavigateToRail?.invoke()
+                                    true
+                                }
+                                android.view.KeyEvent.KEYCODE_DPAD_RIGHT -> {
+                                    if (activePlaylist != null) {
+                                        refreshBtnFocusRequester.requestFocus()
+                                    } else {
+                                        addPlaylistBtnFocusRequester.requestFocus()
+                                    }
+                                    true
+                                }
+                                android.view.KeyEvent.KEYCODE_DPAD_DOWN -> {
+                                    heroBannerFocusRequester.requestFocus()
+                                    true
+                                }
+                                else -> false
+                            }
+                        } else false
+                    }
                 )
 
                 if (activePlaylist != null) {
@@ -201,7 +237,7 @@ fun HomeScreen(
                                 if (native.action == android.view.KeyEvent.ACTION_DOWN) {
                                     when (native.keyCode) {
                                         android.view.KeyEvent.KEYCODE_DPAD_LEFT -> {
-                                            onNavigateToRail?.invoke()
+                                            storageBtnFocusRequester.requestFocus()
                                             true
                                         }
                                         android.view.KeyEvent.KEYCODE_DPAD_RIGHT -> {
@@ -235,7 +271,7 @@ fun HomeScreen(
                                         if (activePlaylist != null) {
                                             refreshBtnFocusRequester.requestFocus()
                                         } else {
-                                            onNavigateToRail?.invoke()
+                                            storageBtnFocusRequester.requestFocus()
                                         }
                                         true
                                     }
@@ -336,11 +372,7 @@ fun HomeScreen(
                         focusRequester = heroBannerFocusRequester,
                         onNavigateToRail = onNavigateToRail,
                         onNavigateUp = {
-                            if (activePlaylist != null) {
-                                refreshBtnFocusRequester.requestFocus()
-                            } else {
-                                addPlaylistBtnFocusRequester.requestFocus()
-                            }
+                            storageBtnFocusRequester.requestFocus()
                         }
                     )
                 }
@@ -816,7 +848,7 @@ fun HomeScreen(
                                     }
                                     TvFocusableButton(
                                         text = "Load Verified Streams",
-                                        icon = Icons.Default.PlayArrow,
+                                        icon = Icons.Filled.PlayArrow,
                                         onClick = onLoadDemoChannels,
                                         isPrimary = true,
                                         tag = "btn_load_demo_channels"
@@ -954,106 +986,158 @@ private fun HeroQuickWatchBanner(
                     )
                 )
         ) {
-            Row(
+            Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(22.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
+                    .padding(22.dp)
             ) {
-                Column(
-                    modifier = Modifier
-                        .weight(1f)
-                        .padding(end = 20.dp)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
+                            .padding(end = 20.dp)
                     ) {
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(6.dp))
-                                .background(TvLiveRed.copy(alpha = 0.2f))
-                                .border(1.dp, TvLiveRed.copy(alpha = 0.6f), RoundedCornerShape(6.dp))
-                                .padding(horizontal = 8.dp, vertical = 3.dp)
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(5.dp)
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .background(TvLiveRed.copy(alpha = 0.2f))
+                                    .border(1.dp, TvLiveRed.copy(alpha = 0.6f), RoundedCornerShape(6.dp))
+                                    .padding(horizontal = 8.dp, vertical = 3.dp)
                             ) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(6.dp)
-                                        .clip(CircleShape)
-                                        .background(TvLiveRed)
-                                )
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(5.dp)
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(6.dp)
+                                            .clip(CircleShape)
+                                            .background(TvLiveRed)
+                                    )
+                                    Text(
+                                        text = if (activePlaylist?.isDefault == true) "TAMIL LIVE TV" else "FEATURED STREAM",
+                                        color = TvLiveRed,
+                                        fontSize = 10.5.sp,
+                                        fontWeight = FontWeight.ExtraBold,
+                                        letterSpacing = 0.5.sp
+                                    )
+                                }
+                            }
+
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .background(TvPrimary.copy(alpha = 0.2f))
+                                    .border(1.dp, TvPrimary.copy(alpha = 0.5f), RoundedCornerShape(6.dp))
+                                    .padding(horizontal = 8.dp, vertical = 3.dp)
+                            ) {
                                 Text(
-                                    text = if (activePlaylist?.isDefault == true) "TAMIL LIVE TV" else "LIVE BROADCAST",
-                                    color = TvLiveRed,
-                                    fontSize = 10.5.sp,
-                                    fontWeight = FontWeight.ExtraBold,
-                                    letterSpacing = 0.5.sp
+                                    text = "$channelCount Channels",
+                                    color = TvPrimary,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold
                                 )
                             }
                         }
 
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        Text(
+                            text = activePlaylist?.name ?: "StreamDeck Live TV",
+                            color = Color.White,
+                            fontSize = 24.sp,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+
+                        Spacer(modifier = Modifier.height(4.dp))
+
+                        Text(
+                            text = "A rich cinematic television experience. Explore digital live streams, high-definition channels, and your saved favorites.",
+                            color = TvTextSecondary,
+                            fontSize = 13.sp,
+                            lineHeight = 18.sp,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
+                        )
+
+                        Spacer(modifier = Modifier.height(16.dp))
+
+                        // Watch Now Button (Wireframe Panel 1)
                         Box(
                             modifier = Modifier
-                                .clip(RoundedCornerShape(6.dp))
-                                .background(TvPrimary.copy(alpha = 0.2f))
-                                .border(1.dp, TvPrimary.copy(alpha = 0.5f), RoundedCornerShape(6.dp))
-                                .padding(horizontal = 8.dp, vertical = 3.dp)
+                                .clip(RoundedCornerShape(20.dp))
+                                .background(if (isFocused) Color.White else TvPrimary)
+                                .padding(horizontal = 18.dp, vertical = 9.dp)
                         ) {
-                            Text(
-                                text = "$channelCount Channels Available",
-                                color = TvPrimary,
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold
-                            )
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Filled.PlayArrow,
+                                    contentDescription = null,
+                                    tint = if (isFocused) Color.Black else Color.White,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Text(
+                                    text = "Watch Now",
+                                    color = if (isFocused) Color.Black else Color.White,
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    Text(
-                        text = activePlaylist?.name ?: "StreamDeck Live TV",
-                        color = Color.White,
-                        fontSize = 22.sp,
-                        fontWeight = FontWeight.Bold,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-
-                    Spacer(modifier = Modifier.height(4.dp))
-
-                    Text(
-                        text = "Press Select to open the TV Guide, explore categories, and tune into live channels.",
-                        color = TvTextSecondary,
-                        fontSize = 13.sp,
-                        lineHeight = 18.sp,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis
-                    )
+                    // TV Icon Platter
+                    Box(
+                        modifier = Modifier
+                            .size(72.dp)
+                            .clip(RoundedCornerShape(18.dp))
+                            .background(if (isFocused) TvPrimary.copy(alpha = 0.4f) else Color(0x18FFFFFF))
+                            .border(
+                                width = 1.5.dp,
+                                color = if (isFocused) TvPrimary else Color(0x30FFFFFF),
+                                shape = RoundedCornerShape(18.dp)
+                            ),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.LiveTv,
+                            contentDescription = "Watch",
+                            tint = if (isFocused) TvAccent else Color.White,
+                            modifier = Modifier.size(38.dp)
+                        )
+                    }
                 }
 
-                Box(
-                    modifier = Modifier
-                        .size(56.dp)
-                        .clip(CircleShape)
-                        .background(if (isFocused) TvPrimary else Color(0xFF222B3D))
-                        .border(
-                            width = 2.dp,
-                            color = if (isFocused) Color.White else Color(0x33FFFFFF),
-                            shape = CircleShape
-                        ),
-                    contentAlignment = Alignment.Center
+                Spacer(modifier = Modifier.height(14.dp))
+
+                // Pagination Indicator Dots (Wireframe Panel 1)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.PlayArrow,
-                        contentDescription = "Watch",
-                        tint = if (isFocused) Color(0xFF071224) else Color.White,
-                        modifier = Modifier.size(32.dp)
-                    )
+                    repeat(5) { dotIndex ->
+                        Box(
+                            modifier = Modifier
+                                .padding(horizontal = 3.dp)
+                                .size(if (dotIndex == 0) 7.dp else 5.dp)
+                                .clip(CircleShape)
+                                .background(if (dotIndex == 0) Color.White else Color(0x40FFFFFF))
+                        )
+                    }
                 }
             }
         }
@@ -1132,7 +1216,7 @@ private fun EmptyHomeState(
 
                 TvFocusableButton(
                     text = "Load Demo Streams",
-                    icon = Icons.Default.PlayArrow,
+                    icon = Icons.Filled.PlayArrow,
                     onClick = onLoadDemoChannels,
                     tag = "empty_btn_load_demo"
                 )
